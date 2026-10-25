@@ -1,0 +1,48 @@
+[project]
+name = "clasp"
+version = "0.1.0"
+description = "Clasp: nothing moves until both sides are kept whole. Agentic chat commerce with an execution control plane."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "boto3>=1.40",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+  "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "moto[all]>=5.0",
+  "cryptography>=43",
+  "aws-cdk-lib>=2.200",
+  "constructs>=10",
+]
+agent = [
+  "strands-agents>=1.0",
+  "strands-agents-tools>=0.2",
+  "bedrock-agentcore>=0.1",
+  "bedrock-agentcore-starter-toolkit>=0.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+env = [
+  "AWS_DEFAULT_REGION=us-east-1",
+  "AWS_ACCESS_KEY_ID=testing",
+  "AWS_SECRET_ACCESS_KEY=testing",
+  "AWS_SECURITY_TOKEN=testing",
+  "AWS_SESSION_TOKEN=testing",
+  "CLASP_SKIP_DOTENV=1",
+  "STORE_MODE=dynamodb",
+  "WORKFLOW_MODE=memory",
+  "NOTIFY_MODE=memory",
+  "EVIDENCE_MODE=stub",
+  "AGENT_MODE=scripted",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.setuptools]
+packages = ["services", "infra"]

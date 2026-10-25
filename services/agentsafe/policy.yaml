@@ -1,0 +1,58 @@
+# Clasp reference policy for the AgentSafe adapter. Versioned; loaded at cold start.
+# Demo defaults — every number here is a knob, not a law.
+version: "2026.10.25-1"
+
+authorization:
+  algorithm: ES256          # compact JWS signed by a KMS ECC_NIST_P256 key
+  ttl_seconds: 90           # lifetime of a signed authorization
+  max_ttl_seconds: 120      # executor refuses anything longer, whatever the issuer says
+
+currencies: [USD]
+
+identity:
+  binding_required: true    # actor_sub must equal the order owner for every buyer action
+  system_actors:            # non-human actors allowed for specific actions
+    hold: ["system:psp"]
+
+actions:
+  discount:
+    allowed_states: [DRAFT, PAYMENT_PENDING]
+    max_percent: 10
+  hold:
+    allowed_states: [PAYMENT_PENDING]
+    required_evidence: [psp_verified, psp_event_id]
+    must_equal: order_amount
+  release:
+    allowed_states: [DISPATCHED, DELIVERED]
+    required_evidence: [delivery_code_verified]
+    must_equal: held_amount
+  refund:
+    allowed_states: [DISPUTED, ESCALATED]
+    required_evidence: [challenge_verified]
+    auto_cap_minor: 5000              # 50 USD
+    auto_cap_percent_of_order: 30
+    above_cap: escalate
+    velocity:
+      max_per_buyer: 1
+      window_days: 30
+  credit:                             # store credit follows the refund ladder
+    allowed_states: [DISPUTED, ESCALATED]
+    required_evidence: [challenge_verified]
+    auto_cap_minor: 5000
+    auto_cap_percent_of_order: 30
+    above_cap: escalate
+  replacement:
+    allowed_states: [DISPUTED, ESCALATED]
+    required_evidence: [challenge_verified]
+    zero_amount: true
+
+# The compensation ladder the agent may offer in a Truce (max three options).
+truce:
+  ladder:
+    - { kind: partial_refund, action: refund,      percent: 20, label: "20% partial refund" }
+    - { kind: replacement,    action: replacement,              label: "Replacement item" }
+    - { kind: store_credit,   action: credit,      percent: 30, label: "30% store credit" }
+
+escalation:
+  approver_role: supervisor
+  approval_link_ttl_seconds: 172800   # 48h

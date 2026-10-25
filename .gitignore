@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+cdk.out/
+.cdk.staging/
+*.egg-info/
+.bedrock_agentcore.yaml
+.agentcore/
+build/
+dist/
+.DS_Store
+demo/outbox.jsonl
+demo/state/
