@@ -28,7 +28,7 @@ lint:            ## Byte-compile everything (cheap sanity check)
 	$(PY) -m compileall -q services infra demo tests
 
 synth:           ## cdk synth all stacks
-	cd infra && ../$(PY) -m cdk_app synth >/dev/null && echo "synth ok (infra/cdk.out)"
+	cd infra && npx --yes cdk@2 synth --quiet --app "../$(PY) app.py" && echo "synth ok (infra/cdk.out)"
 
 bootstrap:       ## cdk bootstrap the target account/region
 	cd infra && npx --yes cdk@2 bootstrap --app "../$(PY) app.py"

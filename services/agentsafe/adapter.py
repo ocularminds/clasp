@@ -35,6 +35,29 @@ class AgentSafeClient:
             return self._via_lambda(req)
         return self._via_inprocess(req)
 
+    def approval_links(self, *, order_id: str, decision_id: str, amount_minor: int, currency: str, approver: str) -> dict:
+        """Signed approve/reject tokens for the supervisor email. Minted by the policy service, so KMS Sign
+        stays with it. (Extension to the /decide contract: POST /approval-links.)"""
+        body = {"op": "approval_links", "order_id": order_id, "decision_id": decision_id, "amount_minor": amount_minor,
+                "currency": currency, "approver": approver}
+        if self.url:
+            import requests
+
+            r = requests.post(f"{self.url.rstrip('/')}/approval-links", json=body, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        if self.function_arn:
+            from ..common.aws import client
+
+            resp = client("lambda").invoke(FunctionName=self.function_arn, Payload=json.dumps(body).encode())
+            out = json.loads(resp["Payload"].read())
+            return json.loads(out["body"]) if isinstance(out, dict) and "body" in out else out
+        if self._service is None:
+            from .service import get_service
+
+            self._service = get_service()
+        return self._service.approval_links(order_id, decision_id, amount_minor, currency, approver)
+
     def _via_http(self, req: DecideRequest) -> Decision:
         import requests
 
@@ -76,3 +99,7 @@ def set_client(client: AgentSafeClient | None) -> None:
 
 def decide(**kwargs) -> Decision:
     return get_client().decide(**kwargs)
+
+
+def approval_links(**kwargs) -> dict:
+    return get_client().approval_links(**kwargs)

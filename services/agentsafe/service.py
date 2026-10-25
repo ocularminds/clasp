@@ -98,19 +98,31 @@ class AgentSafeService:
         }
         return jws.encode({"alg": ALG, "typ": "JWT", "kid": self.signer.kid}, claims, self.signer.sign)
 
-    def verify_approval_token(self, token: str | None, req: DecideRequest) -> dict | None:
-        """Return the approval claims only if the token is ours, unexpired and about this request."""
-        if not token or not self.verifier:
+    def approval_links(self, order_id: str, decision_id: str, amount_minor: int, currency: str, approver: str) -> dict:
+        return {"approve": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "approve"),
+                "reject": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "reject")}
+
+    @staticmethod
+    def read_approval_token(token: str | None, verifier: Verifier | None) -> dict | None:
+        """Signature, key id, type and expiry only. Returns the claims or None. Never trust claims before this."""
+        if not token or verifier is None:
             return None
         try:
             header, claims, signing_input, sig = jws.split(token)
         except jws.TokenError:
             return None
-        if header.get("alg") != ALG or header.get("kid") != self.verifier.kid:
+        if header.get("alg") != ALG or header.get("kid") != verifier.kid:
             return None
-        if not self.verifier.verify(signing_input, sig):
+        if not verifier.verify(signing_input, sig):
             return None
         if claims.get("typ") != "approval" or int(claims.get("exp", 0)) <= clock.now():
+            return None
+        return claims
+
+    def verify_approval_token(self, token: str | None, req: DecideRequest) -> dict | None:
+        """Return the approval claims only if the token is ours, unexpired and about this request."""
+        claims = self.read_approval_token(token, self.verifier)
+        if claims is None:
             return None
         if (claims.get("order_id"), claims.get("amount_minor"), str(claims.get("currency", "")).upper()) != (
             req.order_id, req.amount_minor, req.currency.upper()

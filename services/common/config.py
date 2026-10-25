@@ -47,6 +47,24 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+@lru_cache(maxsize=16)
+def _ssm_cached(name: str) -> str | None:
+    try:
+        from .aws import client
+
+        return client("ssm").get_parameter(Name=name)["Parameter"]["Value"]
+    except Exception:  # noqa: BLE001 — missing parameter or no credentials: fall back to defaults
+        return None
+
+
+def _ssm(key: str) -> str | None:
+    """Values other stacks publish to SSM to avoid cross-stack cycles (deployed only)."""
+    prefix = env("SSM_PREFIX")
+    if not prefix:
+        return None
+    return _ssm_cached(f"{prefix.rstrip('/')}/{key}")
+
+
 class Settings:
     """Lazy accessors so tests can flip env vars between cases."""
 
@@ -139,7 +157,7 @@ class Settings:
 
     @property
     def api_base_url(self) -> str:
-        return (env("API_BASE_URL", "http://localhost:8080") or "http://localhost:8080").rstrip("/")
+        return (env("API_BASE_URL") or _ssm("api_base_url") or "http://localhost:8080").rstrip("/")
 
     # identity
     @property
@@ -153,7 +171,7 @@ class Settings:
 
     @property
     def agent_runtime_arn(self) -> str | None:
-        return env("AGENT_RUNTIME_ARN")
+        return env("AGENT_RUNTIME_ARN") or _ssm("agent_runtime_arn")
 
     @property
     def model_id(self) -> str:

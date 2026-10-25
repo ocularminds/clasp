@@ -143,11 +143,12 @@ class Executor:
             "amount_minor": req.amount_minor, "currency": req.currency.upper(), "actor_sub": req.actor_sub,
             "buyer_sub": order.get("buyer_sub"), "decision_id": claims["decision_id"], "nonce": claims["nonce"],
             "policy_version": claims["policy_version"], "correlation_id": req.correlation_id,
-            "ts": str(clock.now()).zfill(12), "metadata": req.metadata,
+            "metadata": req.metadata,
             "status_before": order.get("status"), "status_after": updates.get("status", order.get("status")),
         }
         try:
-            self.stores.commit_money_move(claims["nonce"], claims["exp"] + 3600, entry, req.order_id, updates, allowed_states)
+            self.stores.commit_money_move(claims["nonce"], claims["exp"] + 3600, entry, req.order_id, updates, allowed_states,
+                                          expected_version=int(order.get("version", 0)))
         except ReplayError:
             res = ExecResult(False, "replay", "authorization nonce already used", decision_id=claims["decision_id"])
             elog.warn("executor.refused", code=res.code, reason=res.reason)

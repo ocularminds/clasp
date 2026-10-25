@@ -16,10 +16,15 @@ def _parse(event: dict) -> dict:
 def lambda_handler(event, context):
     payload = _parse(event)
     try:
-        req = DecideRequest.from_dict(payload)
-        decision = get_service().decide(req)
-        body = decision.to_dict()
-        status = 200
+        if payload.get("op") == "approval_links" or (event.get("rawPath") or "").endswith("/approval-links"):
+            body = get_service().approval_links(str(payload["order_id"]), str(payload["decision_id"]),
+                                                int(payload["amount_minor"]), str(payload["currency"]), str(payload["approver"]))
+            status = 200
+        else:
+            req = DecideRequest.from_dict(payload)
+            decision = get_service().decide(req)
+            body = decision.to_dict()
+            status = 200
     except Exception as e:  # noqa: BLE001 — a broken request is a deny, never an allow
         body = {"decision": "deny", "reason": f"malformed_request: {type(e).__name__}: {e}", "decision_id": "-",
                 "policy_version": "-"}

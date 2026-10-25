@@ -53,6 +53,25 @@ def from_ddb(value: Any) -> Any:
     return value
 
 
+_counter = 0
+
+
+def ts_key() -> str:
+    """Monotonic, sortable timestamp key: 12-digit epoch seconds + 6-digit per-process counter.
+    Keeps order deterministic even when many writes share one second (or a frozen test clock)."""
+    global _counter
+    _counter = (_counter + 1) % 1_000_000
+    return f"{clock.now():012d}{_counter:06d}"
+
+
+def ts_since(ts: int) -> str:
+    return f"{int(ts):012d}000000"
+
+
+def ts_epoch(key: str) -> int:
+    return int(str(key)[:12])
+
+
 def day_of(ts: int) -> str:
     import time
 
@@ -142,12 +161,22 @@ class DynamoStores:
         )
         return [from_ddb(i) for i in r.get("Items", [])]
 
+    def find_order_by_token(self, token: str) -> tuple[dict, str] | None:
+        """Locate the order parked on a task token. Tiny tables; a filtered scan is fine."""
+        for phase in ("payment", "dispatch", "delivery", "dispute", "approval"):
+            r = self._t("orders").scan(FilterExpression="tokens.#p = :t", ExpressionAttributeNames={"#p": phase},
+                                       ExpressionAttributeValues={":t": token})
+            items = r.get("Items") or []
+            if items:
+                return from_ddb(items[0]), phase
+        return None
+
     # ledger -----------------------------------------------------------------
     def ledger_entries(self, order_id: str) -> list[dict]:
         r = self._t("ledger").query(
             KeyConditionExpression="order_id = :o", ExpressionAttributeValues={":o": order_id}, ConsistentRead=True
         )
-        return sorted((from_ddb(i) for i in r.get("Items", [])), key=lambda e: (e.get("ts", 0), e["entry_id"]))
+        return sorted((from_ddb(i) for i in r.get("Items", [])), key=lambda e: (int(e.get("seq", 0)), e.get("ts", "")))
 
     def count_refunds_for_buyer(self, buyer_sub: str, since_ts: int) -> int:
         r = self._t("ledger").query(
@@ -155,22 +184,28 @@ class DynamoStores:
             KeyConditionExpression="buyer_sub = :b AND ts >= :s",
             FilterExpression="#t = :rf",
             ExpressionAttributeNames={"#t": "type"},
-            ExpressionAttributeValues={":b": buyer_sub, ":s": str(since_ts).zfill(12), ":rf": "REFUND"},
+            ExpressionAttributeValues={":b": buyer_sub, ":s": ts_since(since_ts), ":rf": "REFUND"},
         )
         return len(r.get("Items", []))
 
     def commit_money_move(self, nonce: str, nonce_expires_at: int, entry: dict, order_id: str,
-                          order_updates: dict, expected_status: Iterable[str]) -> None:
-        """Atomic: consume nonce, append ledger entry, update order. Raises ReplayError / ConflictError."""
+                          order_updates: dict, expected_status: Iterable[str], expected_version: int = 0) -> None:
+        """Atomic: consume nonce, append ledger entry, update order (status + version checked).
+        Raises ReplayError / ConflictError; on any failure nothing is written."""
         entry = dict(entry)
-        entry.setdefault("ts", str(clock.now()).zfill(12))
-        order_updates = {**order_updates, "updated_at": clock.now()}
+        entry.setdefault("ts", ts_key())
+        entry["seq"] = int(expected_version) + 1
+        order_updates = {**order_updates, "updated_at": clock.now(), "version": int(expected_version) + 1}
         expr, names, values = _build_update(order_updates)
         statuses = list(expected_status)
         names["#st"] = "status"
+        names["#ver"] = "version"
+        values[":expver"] = int(expected_version)
         for i, s in enumerate(statuses):
             values[f":st{i}"] = s
-        cond = f"#st IN ({', '.join(f':st{i}' for i in range(len(statuses)))})"
+        cond = (f"#st IN ({', '.join(f':st{i}' for i in range(len(statuses)))}) AND "
+                f"(#ver = :expver OR (attribute_not_exists(#ver) AND :expver = :zero))")
+        values[":zero"] = 0
         try:
             self._client.transact_write_items(
                 TransactItems=[
@@ -217,8 +252,8 @@ class DynamoStores:
     # decisions --------------------------------------------------------------
     def put_decision(self, record: dict) -> None:
         record = dict(record)
-        record.setdefault("ts", str(clock.now()).zfill(12))
-        record.setdefault("day", day_of(int(record["ts"])))
+        record["ts"] = ts_key()
+        record.setdefault("day", day_of(ts_epoch(record["ts"])))
         self._t("decisions").put_item(Item=to_ddb(record))
 
     def decisions_for_order(self, order_id: str) -> list[dict]:
@@ -234,7 +269,7 @@ class DynamoStores:
                 IndexName="by_day",
                 KeyConditionExpression="#d = :d AND ts >= :s",
                 ExpressionAttributeNames={"#d": "day"},
-                ExpressionAttributeValues={":d": day, ":s": str(since_ts).zfill(12)},
+                ExpressionAttributeValues={":d": day, ":s": ts_since(since_ts)},
                 Limit=limit,
             )
             out.extend(from_ddb(i) for i in r.get("Items", []))
@@ -371,25 +406,36 @@ class LocalStores:
         rows = [o for o in self._db["orders"].values() if o.get("buyer_sub") == buyer_sub]
         return sorted((json.loads(json.dumps(o)) for o in rows), key=lambda o: o.get("created_at", 0), reverse=True)
 
+    def find_order_by_token(self, token):
+        for o in self._db["orders"].values():
+            for phase, t in (o.get("tokens") or {}).items():
+                if t == token:
+                    return json.loads(json.dumps(o)), phase
+        return None
+
     # ledger
     def ledger_entries(self, order_id):
         rows = [e for e in self._db["ledger"].values() if e["order_id"] == order_id]
-        return sorted(rows, key=lambda e: (e.get("ts", ""), e["entry_id"]))
+        return sorted(rows, key=lambda e: (int(e.get("seq", 0)), e.get("ts", "")))
 
     def count_refunds_for_buyer(self, buyer_sub, since_ts):
         return sum(1 for e in self._db["ledger"].values()
                    if e.get("buyer_sub") == buyer_sub and e.get("type") == "REFUND"
-                   and int(e.get("ts", "0")) >= since_ts)
+                   and ts_epoch(e.get("ts", "0")) >= since_ts)
 
-    def commit_money_move(self, nonce, nonce_expires_at, entry, order_id, order_updates, expected_status):
+    def commit_money_move(self, nonce, nonce_expires_at, entry, order_id, order_updates, expected_status, expected_version=0):
         with self._lock:
             if nonce in self._db["nonces"]:
                 raise ReplayError(f"nonce {nonce} already consumed")
             o = self._db["orders"].get(order_id)
             if o is None or o.get("status") not in list(expected_status):
                 raise ConflictError(f"order {order_id} not in expected status {list(expected_status)}")
+            if int(o.get("version", 0)) != int(expected_version):
+                raise ConflictError(f"order {order_id} changed underneath (version {o.get('version')} != {expected_version})")
             entry = dict(entry)
-            entry.setdefault("ts", str(clock.now()).zfill(12))
+            entry.setdefault("ts", ts_key())
+            entry["seq"] = int(expected_version) + 1
+            order_updates = {**order_updates, "version": int(expected_version) + 1}
             if self._k(order_id, entry["entry_id"]) in self._db["ledger"]:
                 raise ConflictError("ledger entry exists")
             self._db["nonces"][nonce] = {"nonce": nonce, "expires_at": nonce_expires_at, "order_id": order_id,
@@ -405,8 +451,8 @@ class LocalStores:
     # decisions
     def put_decision(self, record):
         record = dict(record)
-        record.setdefault("ts", str(clock.now()).zfill(12))
-        record.setdefault("day", day_of(int(record["ts"])))
+        record["ts"] = ts_key()
+        record.setdefault("day", day_of(ts_epoch(record["ts"])))
         with self._lock:
             self._db["decisions"][record["decision_id"]] = record
             self._flush()
@@ -415,7 +461,7 @@ class LocalStores:
         return sorted((d for d in self._db["decisions"].values() if d.get("order_id") == order_id), key=lambda d: d["ts"])
 
     def decisions_since(self, since_ts, limit=50):
-        rows = [d for d in self._db["decisions"].values() if int(d["ts"]) >= since_ts]
+        rows = [d for d in self._db["decisions"].values() if ts_epoch(d["ts"]) >= since_ts]
         return sorted(rows, key=lambda d: d["ts"])[-limit:]
 
     # challenges
