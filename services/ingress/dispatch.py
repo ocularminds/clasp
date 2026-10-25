@@ -51,6 +51,12 @@ def fetch_whatsapp_media(inbound: Inbound) -> list[str]:
 def fetch_url_media(inbound: Inbound) -> list[str]:
     keys = []
     for m in inbound.media:
+        if m.get("s3_key"):
+            # EUM already uploaded this RCS file using the dedicated media role.
+            if m.get("s3_bucket") != settings.media_bucket or not str(m["s3_key"]).startswith("inbound/rcs/"):
+                raise ValueError("RCS media must belong to the configured bucket and inbound/rcs/ prefix.")
+            keys.append(m["s3_key"])
+            continue
         url = m.get("url")
         if not url:
             continue

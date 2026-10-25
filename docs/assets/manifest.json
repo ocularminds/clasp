@@ -1,0 +1,35 @@
+{
+  "method": "Deterministic Pillow composition; no generated imagery",
+  "brand_source": "https://decionis.com/decionis-logo-wordmark.png",
+  "brand_treatment": "Existing wordmark preserved, scaled proportionally",
+  "accent_color": "#00635f",
+  "exports": [
+    {
+      "file": "architecture.png",
+      "dimensions": [
+        2400,
+        1580
+      ],
+      "bytes": 254595,
+      "sha256": "96916edf3dd7cbdc75107d99de11d48c0a94fe568a2a3bf0eb1d11cb4e585023"
+    },
+    {
+      "file": "assets/rcs-logo.png",
+      "dimensions": [
+        224,
+        224
+      ],
+      "bytes": 15747,
+      "sha256": "e4e3260d067c6e8f7e41f1f88bbaaa2b51133f2fda199061bae09bf5669f9966"
+    },
+    {
+      "file": "assets/rcs-banner.png",
+      "dimensions": [
+        1440,
+        448
+      ],
+      "bytes": 47455,
+      "sha256": "c13319961de22e054d02e5fa5af901ee242d581a7918b88d344fbd223fd200b1"
+    }
+  ]
+}

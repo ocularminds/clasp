@@ -1,5 +1,5 @@
 """Messaging: SNS inbound topics (WhatsApp via End User Messaging Social, SMS/RCS via SMS v2 two-way),
-the single ingress Lambda, and the SES sender identity.
+the single ingress Lambda, and an RCS media upload role.
 
 TODO(human) after deploy — these bind console-created resources to the topics:
   aws socialmessaging put-whatsapp-business-account-event-destinations --id <WABA_ID> \
@@ -12,7 +12,6 @@ from __future__ import annotations
 from aws_cdk import Stack
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda_event_sources as sources
-from aws_cdk import aws_ses as ses
 from aws_cdk import aws_sns as sns
 from constructs import Construct
 
@@ -36,6 +35,21 @@ class MessagingStack(Stack):
         output(self, "INBOUND_WHATSAPP_TOPIC_ARN", self.whatsapp_topic.topic_arn)
         output(self, "INBOUND_SMS_TOPIC_ARN", self.sms_topic.topic_arn)
 
+        # EUM stores inbound RCS photos before publishing their S3 location to SNS.
+        # AWS documents SourceAccount for this service's media-role assumption.
+        self.rcs_media_role = iam.Role(
+            self, "RcsInboundMediaRole", role_name=f"clasp-{stage()}-rcs-media",
+            assumed_by=iam.ServicePrincipal("sms-voice.amazonaws.com", conditions={
+                "StringEquals": {"aws:SourceAccount": self.account}}),
+        )
+        self.rcs_media_role.add_to_policy(iam.PolicyStatement(
+            # EUM writes a setup notification directly under the configured prefix.
+            actions=["s3:PutObject"], resources=[
+                data.media.arn_for_objects("inbound/rcs/*"),
+                data.media.arn_for_objects("inbound/AWS_END_USER_MESSAGING_SETUP_NOTIFICATION"),
+            ]))
+        output(self, "RCS_MEDIA_ROLE_ARN", self.rcs_media_role.role_arn)
+
         self.ingress = make_function(
             self, "Ingress", "ingress.handler",
             {**COMMON_ENV, **table_env(data), "MEDIA_BUCKET": data.media.bucket_name, "AGENT_MODE": "remote",
@@ -51,10 +65,11 @@ class MessagingStack(Stack):
         data.media.grant_read_write(self.ingress)
         self.ingress.add_to_role_policy(iam.PolicyStatement(actions=["cognito-idp:ListUsers"], resources=[data.user_pool.user_pool_arn]))
         self.ingress.add_to_role_policy(iam.PolicyStatement(
-            actions=MESSAGING_ACTIONS + ["social-messaging:GetWhatsAppMessageMedia", "bedrock-agentcore:InvokeAgentRuntime",
-                                         "ssm:GetParameter"], resources=["*"]))
+            actions=MESSAGING_ACTIONS + ["social-messaging:GetWhatsAppMessageMedia", "ssm:GetParameter"], resources=["*"]))
+        # IAM Policy Autopilot maps the user-bound call to both permissions.
+        self.ingress.add_to_role_policy(iam.PolicyStatement(
+            actions=["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeForUser"],
+            resources=[self.format_arn(service="bedrock-agentcore", resource="runtime/clasp_agent-*")]))
 
-        sender = env("SES_FROM_EMAIL")
-        if sender and not sender.endswith("example.com"):
-            # Creates the identity; the verification email still has to be clicked (SES sandbox).
-            ses.EmailIdentity(self, "SenderIdentity", identity=ses.Identity.email(sender))
+        # SES identities are verified before deployment and managed outside this stack.
+        # Creating the already-verified sender here fails with AlreadyExists.

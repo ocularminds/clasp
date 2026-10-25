@@ -21,7 +21,8 @@ def main(outputs_path: str, env_path: str) -> int:
     values: dict[str, str] = {}
     for _stack, outs in outputs.items():
         for k, v in outs.items():
-            values[env_key(k)] = v
+            if k.startswith("Out"):
+                values[env_key(k)] = v
     values.update(DEPLOYED_MODES)
     p = Path(env_path)
     lines = p.read_text().splitlines() if p.exists() else []

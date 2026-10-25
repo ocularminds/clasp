@@ -1,0 +1,8 @@
+{
+  "name": "clasp-infrastructure",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "devDependencies": {
+    "aws-cdk": "2.1146.1"
+  }
+}

@@ -8,6 +8,11 @@ cdk.out/
 *.egg-info/
 .bedrock_agentcore.yaml
 .agentcore/
+.bedrock_agentcore/
+node_modules/
+infra/cdk-outputs.json
+demo/recordings/
+demo/deployment-state/
 build/
 dist/
 .DS_Store
