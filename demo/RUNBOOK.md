@@ -167,11 +167,12 @@ state. Confirm the runtime is `READY` before starting a phone conversation.
 The agreed demo uses **two iPhones**: buyer and seller both converse on WhatsApp, SMS carries
 alerts, and a desktop email/console capture supplies the third panel. RCS stays configured but
 **untested on a supported handset**. It is not a prerequisite for this revised recording.
-Finish the WhatsApp migration, save the real AWS phone/WABA IDs, bind the inbound topic and
+Finish WhatsApp registration, save the real AWS phone/WABA IDs, bind the inbound topic and
 redeploy before beginning this sequence.
 
-Prepare a parcel/camera bag, a seller dispatch photo, a visibly damaged item/strap, and paper
-for the fresh challenge code. Use real photos; the simulator's placeholder JPEG bytes cannot
+The agreed physical item is a **Zoom H6 sound recorder with a damaged battery cover**.
+Prepare the recorder, a seller dispatch photo and paper for the fresh challenge code.
+Use real photos; the simulator's placeholder JPEG bytes cannot
 exercise Bedrock vision.
 
 Open three recording views: buyer phone, seller phone, and the supervisor email/console panel.
@@ -188,8 +189,8 @@ aws logs tail /aws/lambda/clasp-dev-ingress --region us-east-1 --since 10m --fol
 make decisions
 ```
 
-1. From the **buyer handset**, message the WhatsApp business number: “Is the vintage leather
-   camera bag available? Can I get 10% off?” The first reply should come from Strands using the
+1. From the **buyer handset**, message the WhatsApp business number: “Is the Zoom H6 sound
+   recorder available? Can I get 10% off?” The first reply should come from Strands using the
    live Bedrock model. Keep the conversation inside WhatsApp's customer-service window.
 2. Accept the order and open the hosted checkout link. The button creates a **simulated payment**;
    no card or bank credentials are needed. Confirm the order reaches `HELD` before dispatch.
@@ -203,7 +204,8 @@ make decisions
    and the stored order reached `DISPATCHED`. Wait for the actual workflow state before
    advancing; a tool response can precede Step Functions finishing its next task.
 5. Show the SMS delivery code on the buyer phone, then return to WhatsApp. **Do not redeem the
-   code** for this dispute scenario: redeeming it releases the payout. Say “The strap arrived torn.” The
+   code** for this dispute scenario: redeeming it releases the payout. Say “The recorder's
+   battery cover arrived damaged.” The
    workflow holds the payout and returns a fresh challenge. Write that exact code next to the
    item, photograph it, and send the image through WhatsApp before the challenge expires.
 6. After evidence verification succeeds, request a $1,000 refund. Show an actual AgentSafe denial
@@ -211,7 +213,7 @@ make decisions
    declines before calling a tool, explain that accurately; do not label it a policy-service
    decision. The deterministic simulator separately demonstrates a forced excessive proposal.
 7. Show the offered compensation options without executing a partial refund. Request the **full
-   amount actually held** instead: normally $108 after the 10% discount on the $120 bag. Confirm
+   amount actually held** instead: normally $108 after the 10% discount on the $120 recorder. Confirm
    AgentSafe returns `escalate` and the stored order reaches `ESCALATED`, with no refund ledger entry.
 8. In the desktop panel, open the SES supervisor email for this order and follow its signed
    Approve link. Confirm `RESOLVED_REFUND`, one `REFUND` ledger entry for the held amount, and the
@@ -253,20 +255,24 @@ Use [the conversational narration](NARRATION.md) for the voice recording. The ta
 the shot guide; do not read its technical labels aloud.
 
 Capture the successful workflow before editing. Preserve its order and label any accelerated
-waiting time. Keep the buyer, seller, and email/console views visible in one split screen until the
-final console shot. Never display verification codes, credentials, account recovery details,
+waiting time. Open with three seconds of the typewritten ASCII Clasp logo, then show the real
+buyer, seller and email/console views in a split screen. Keep the cropped narrator small at
+bottom-left without covering the phone text. Show the final console evidence before the last
+five seconds of Clasp branding. Never display verification codes, credentials, account recovery details,
 or unrelated inbox contents. The demo delivery/challenge codes may be visible after the run
 has completed and they can no longer authorize an action.
 
 | Time | Picture | Narration |
 |---|---|---|
-| 0:00–0:20 | Two real phone views and an email/console panel; Clasp title | “Chat marketplaces have a trust gap. Clasp coordinates the purchase, but every action affecting money passes a separate policy check. This demo uses WhatsApp, SMS and email; RCS is configured but handset delivery is untested.” |
+| 0:00–0:03 | Typewritten ASCII Clasp logo | Opening narration begins. |
+| 0:03–0:20 | Two real phone views and an email/console panel | “Chat marketplaces have a trust gap. Clasp coordinates the purchase, but every action affecting money passes a separate policy check. This demo uses WhatsApp, SMS and email; RCS is configured but handset delivery is untested.” |
 | 0:20–0:50 | Buyer asks, receives 10% offer, uses mock checkout | “Claude checks live inventory through AgentCore Gateway. The checkout is a payment simulation; a signed provider webhook confirms the hold.” |
 | 0:50–1:10 | Seller SMS hold alert, then WhatsApp order ID and dispatch photo | “The seller receives an SMS alert, opens WhatsApp and sends the order ID with the parcel photo. The workflow records the dispatch.” |
 | 1:10–1:25 | Buyer SMS delivery code; then WhatsApp damage report | “Redeeming this SMS code would release the payout. The buyer reports damage before redeeming it, so Clasp calls a Truce.” |
-| 1:25–2:05 | Fresh photo challenge, actual denial, full refund request | “The image is evidence, not permission. AgentSafe checks the requested amount, identity and policy. The $1,000 proposal is denied. Refunding the amount held is above the automatic cap, so the order waits for a supervisor.” |
+| 1:25–2:05 | Fresh photo of the damaged battery cover and challenge code, actual $1,000 response, full refund request | “Asking doesn't give the agent permission to pay it. The proposal still has to pass the policy checks. Refunding the amount held is above the automatic cap, so the order waits for a supervisor.” |
 | 2:05–2:40 | Same order: SES approval, refund result and evidence pack | “The supervisor sees the amount, reason and evidence before approving. The signed link authorizes this proposal only. The executor records one simulated refund, and both parties receive the evidence.” |
-| 2:40–3:00 | Console full screen: Step Functions, decisions, ledger | “Only the executor can append the ledger. It verifies the signature, exact scope, expiry and one-use nonce. Nothing moves until both sides are kept whole.” |
+| 2:40–2:55 | Console evidence: Step Functions, decisions, ledger | “Only the executor can append the ledger. It verifies the signature, exact scope, expiry and one-use nonce.” |
+| Last 5 seconds | Clasp closing animation | “Clasp: nothing moves until both sides are kept whole.” |
 
 If the recorded evidence differs from the script, update the narration. Show the actual decision
 and status; a saved script is not proof that the live run succeeded.
@@ -282,7 +288,15 @@ uv pip install --python .venv/bin/python -e '.[assets]'
 source are recorded in `docs/assets/manifest.json`. The architecture describes the implemented
 CDK resources; it does not claim a Knowledge Base or EventBridge integration.
 
-Save the real phone captures and final console shot under `demo/recordings/`. Prepare synchronized,
+Save the real phone captures and final console shot under the ignored `demo/recordings/`.
+The accepted revised edit uses the supplied cleaned narration, four Zoom H6 replacement lines,
+a three-second logo opening, real workflow footage, a small square narrator at bottom-left,
+readable captions and a five-second Clasp closing. Adjust the body to the finished voice track;
+keep the complete export under three minutes. The live footage and narration replacements
+must be captured before that edit is rendered. Preserve the earlier illustrated presentation.
+
+The command below is the **earlier split-screen composer**, retained for that simpler layout.
+It does not add the logo bookends, narrator inset or captions. Prepare synchronized,
 edited clips covering the first 160 seconds: two portrait phone captures and one email/console
 capture. The script preserves the full frame of each source. Crop the desktop recording to the
 relevant message or console view before assembly so text remains legible. Narration should span
