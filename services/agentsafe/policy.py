@@ -133,6 +133,10 @@ def evaluate(policy: Policy, req: dict, order: dict | None, prior_refunds: int, 
             return deny("identity_binding", f"actor {actor!r} is not the owner of order {order.get('order_id')}")
         checks.append("ok identity_binding")
 
+    # an escalated order is parked for a human: nothing moves without their signed approval
+    if status == "ESCALATED" and not (approval and approval.get("approved") is True):
+        return deny("approval_required", "the order is escalated; only a verified supervisor approval can move it")
+
     # evidence --------------------------------------------------------------
     for key in rules.get("required_evidence", []):
         if not _truthy(evidence.get(key)):

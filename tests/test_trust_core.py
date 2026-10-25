@@ -229,7 +229,9 @@ def test_supervisor_approval_unlocks_an_above_cap_refund(agentsafe, executor, ma
     token = agentsafe.mint_approval_link_token(order["order_id"], esc.decision_id, 12000, "USD", SUPERVISOR, "approve")
     # the approval token is bound to amount + order: a different amount gets no benefit
     wrong = agentsafe.decide(refund_req(order, 11000, context={"approval_token": token}))
-    assert wrong.decision == "escalate"
+    assert wrong.decision == "deny" and wrong.reason.startswith("approval_required")
+    # and with no token at all, an escalated order moves nothing — even an in-cap amount
+    assert agentsafe.decide(refund_req(order, 100)).decision == "deny"
     approved = agentsafe.decide(refund_req(order, 12000, context={"approval_token": token}))
     assert approved.decision == "allow" and approved.reason.startswith("supervisor_approved")
 
@@ -240,7 +242,7 @@ def test_supervisor_approval_unlocks_an_above_cap_refund(agentsafe, executor, ma
     rejected = agentsafe.mint_approval_link_token(order["order_id"], esc.decision_id, 12000, "USD", SUPERVISOR, "reject")
     other = make_order(status="ESCALATED", amount=12000)
     d = agentsafe.decide(refund_req(other, 12000, context={"approval_token": rejected}))
-    assert d.decision in {"escalate", "deny"}  # a rejection never allows
+    assert d.decision == "deny"  # a rejection never allows
 
 
 def test_jws_der_roundtrip():
