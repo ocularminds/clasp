@@ -10,9 +10,9 @@ The agent negotiates, coordinates delivery and triages disputes across WhatsApp,
 email. Every money-moving action it proposes is authorized or denied by an execution control
 plane (AgentSafe) that sits between the agent and the payout ledger.
 
-> Status: M0–M3 are done and run offline (`make simulate`, `make simulate ARGS="--chat"`): trust core,
-> order workflow + mock PSP, and the Strands agent with ingress for WhatsApp / RCS / SMS payloads.
-> CDK infrastructure and real-channel wiring follow. See the end of this file for what a human must do.
+> Status: the whole path runs offline (`make simulate`), the CDK app synthesizes with IAM tests, and the
+> agent, ingress and channel router are written against the confirmed End User Messaging / SES / AgentCore
+> APIs. Deploying to an account and running on real phones needs the human-only steps at the end of this file.
 
 ## The invariant
 
@@ -29,18 +29,62 @@ partial refund with verified evidence is allowed; a 120 USD refund escalates; ta
 replayed and wrong-actor authorizations are all refused and nothing is written.
 `tests/test_boundary.py` checks statically that no module outside the executor can commit a money move.
 
+## Deploy
+
+```bash
+cp .env.example .env               # fill in the TODO(human) values
+make bootstrap                     # once per account/region
+make deploy                        # five stacks; outputs are merged into .env
+make agent-deploy                  # AgentCore Runtime via the starter toolkit; writes AGENT_RUNTIME_ARN
+make seed                          # items, parties, Cognito users
+```
+
+Then bind the console-created channel resources to the inbound SNS topics (commands in `demo/RUNBOOK.md`).
+
+| Stack | What it holds |
+|---|---|
+| `ClaspDevData` | DynamoDB `orders, ledger, decisions, nonces, challenges, items, parties`; media bucket; KMS `ECC_NIST_P256` signing key; Cognito user pool (phone); PSP webhook secret |
+| `ClaspDevWorkflow` | AgentSafe, executor, tools and task Lambdas; the order state machine (`waitForTaskToken` for payment, dispatch, delivery, dispute, approval) |
+| `ClaspDevApi` | HTTP API: `GET/POST /pay/{checkout_id}`, `POST /webhooks/psp`, `GET /approvals` |
+| `ClaspDevMessaging` | Inbound SNS topics for WhatsApp and SMS/RCS, the ingress Lambda, SES sender identity |
+| `ClaspDevAgent` | Bedrock Guardrail (PII masking), AgentCore Memory, AgentCore Gateway + Lambda tools target (Cognito JWT), runtime execution role |
+
+IAM carries the invariant into the cloud: only the executor role may `PutItem` on the ledger (nobody may delete),
+only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches, can only invoke those two.
+`tests/test_infra_synth.py` asserts this on the synthesized templates.
+
+## For judges: how to interact
+
+* **Offline, in two minutes:** `make deps && make test && make simulate`. Every channel message is printed,
+  and the run ends with the ledger and the AgentSafe decision log, including the denied "$1,000" injection.
+* **On phones:** the test numbers, WhatsApp opt-in instructions and the supervisor mailbox are listed in
+  `demo/RUNBOOK.md` once the deployment is live (TODO(human): fill after the EUM console steps). WhatsApp
+  stays inside the 24-hour customer-service window because the buyer always initiates.
+* **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
+  (delivery = one-time SMS code) and production-grade image forensics (the model only reports; AgentSafe decides).
+  Everything else is real AWS: End User Messaging Social and SMS/RCS v2, SES, AgentCore Runtime/Gateway/Memory,
+  Bedrock + Guardrails, Step Functions, DynamoDB, KMS, Cognito.
+
 ## Layout
 
 ```
-infra/        CDK app (one stack per concern)
+infra/                CDK app: app.py, bundling.py (local pip, no Docker), write_env.py, stacks/{data,workflow,api,messaging,agent}
 services/
-  agentsafe/  adapter + reference policy service + policy.yaml + KMS signer
-  executor/   verifies authorization, appends ledger, advances workflow
-  common/     config, stores (DynamoDB / local), logging, clock
-  workflows/  Step Functions driver + local runner
-  ...         ingress, agent, tools, psp_mock, approvals, notify (next milestones)
-demo/         seed.py, simulate.py, RUNBOOK.md
-tests/        pytest + moto
+  ingress/            SNS → normalize {channel, from, text, media, button} → resolve sub → invoke agent → reply
+  agent/              Strands agent, prompt, actor-binding hook, memory, AgentCore entrypoint, deploy wrapper
+  tools/              Gateway Lambda target: get_item, start_order, propose_{discount,refund,credit,replacement},
+                      create_checkout, record_dispatch, confirm_delivery, report_problem, issue_challenge,
+                      verify_evidence, get_truce_options, offer_options, notify_party
+  agentsafe/          adapter + reference policy service + policy.yaml + KMS signer
+  executor/           verifies authorization, appends ledger, advances workflow
+  workflows/          task bodies, Step Functions handler, local runner
+  psp_mock/           hosted checkout page + HMAC-signed webhook
+  approvals/          SES approval link handler
+  notify/             channel router: whatsapp | rcs pool (SMS fallback) | sms | email
+  common/             config, stores (DynamoDB / local), media, logging, clock
+demo/                 seed.py, simulate.py (--chat), decisions.py, local_api.py, RUNBOOK.md
+tests/                pytest + moto (trust core, boundary, e2e order, ingress, agent binding, infra synth)
+docs/                 architecture.md, decisions.md
 ```
 
 ## Quick start (offline, no AWS account needed)

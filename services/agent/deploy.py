@@ -60,6 +60,14 @@ def main() -> int:
     text = re.sub(r"^AGENT_RUNTIME_ARN=.*$", f"AGENT_RUNTIME_ARN={arn}", text, flags=re.M) if "AGENT_RUNTIME_ARN=" in text \
         else text + f"\nAGENT_RUNTIME_ARN={arn}\n"
     env_path.write_text(text)
+    try:
+        import boto3
+
+        boto3.client("ssm", region_name=region).put_parameter(Name=f"/clasp/{_env('STAGE', 'dev')}/agent_runtime_arn", Value=arn,
+                                                             Type="String", Overwrite=True)
+        print("published to SSM; the deployed ingress Lambda picks it up on its next cold start.")
+    except Exception as e:  # noqa: BLE001
+        print(f"could not publish to SSM ({e}); set AGENT_RUNTIME_ARN in .env and re-run `make deploy`.")
     print(f"AGENT_RUNTIME_ARN={arn} written to .env. Set AGENT_MODE=remote for ingress to call it.")
     return 0
 
