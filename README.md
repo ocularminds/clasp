@@ -12,8 +12,9 @@ plane (AgentSafe) that sits between the agent and the payout ledger.
 
 > Status: the five CDK stacks and AgentCore runtime are deployed. A real Strands/Bedrock turn called the
 > live Gateway inventory tool successfully; a synthetic SNS ingress check produced a real SMS reply
-> confirmed on the recipient's phone. WhatsApp migration, RCS device eligibility and the full handset
-> demo remain in progress. See [verified deployment status](docs/deployment-status.md) and the [runbook](demo/RUNBOOK.md).
+> confirmed on the recipient's phone. The agreed demo uses two iPhones on WhatsApp, SMS alerts and a
+> supervisor email/console panel. It awaits WhatsApp migration and the full handset run. RCS is configured
+> but untested on a supported handset. See [verified deployment status](docs/deployment-status.md) and the [runbook](demo/RUNBOOK.md).
 
 ## The invariant
 
@@ -62,8 +63,8 @@ only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches
 * **Offline, in two minutes:** `make deps && make test && make simulate`. Every channel message is printed,
   and the run ends with the ledger and the AgentSafe decision log, including the denied "$1,000" injection.
 * **On phones:** follow `demo/RUNBOOK.md` and arrange access with the team. Personal test numbers and
-  mailboxes stay in the ignored `.env`. WhatsApp stays inside the 24-hour customer-service window
-  because the buyer always initiates.
+  mailboxes stay in the ignored `.env`. Both buyer and seller initiate their WhatsApp chats so replies
+  stay inside each conversation's 24-hour customer-service window.
 * **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
   (delivery = one-time SMS code) and production-grade image forensics (the model only reports; AgentSafe decides).
   The live implementation uses End User Messaging Social and SMS/RCS v2, SES, AgentCore Runtime/Gateway/Memory,
@@ -150,8 +151,10 @@ code and the supervisor's approval link are all just evidence; none of them can 
 
 ## Demo
 
-`demo/RUNBOOK.md` is the 3-minute script: buy → RCS hold card → SMS code → Truce with the injection attempt →
-SES approval → console view. `make decisions` tails the AgentSafe decision log for the final shot.
+`demo/RUNBOOK.md` is the 3-minute script: buyer WhatsApp → seller SMS alert and WhatsApp dispatch photo →
+buyer SMS code → Truce with the injection attempt → one supervisor-approved refund by SES → console view.
+Two real phone captures sit beside a wider email/console panel. RCS is configured but handset delivery
+is untested. `make decisions` tails the AgentSafe decision log for the final shot.
 `docs/architecture.md` has the diagram; `docs/decisions.md` records why things are the way they are.
 
 ## Account and device setup

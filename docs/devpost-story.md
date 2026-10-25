@@ -7,12 +7,12 @@ Messaging apps became storefronts, but screenshots still stand in for proof of p
 Clasp is a conversational commerce prototype. Truce is its dispute-resolution flow. The hosted checkout and payout ledger simulate payments; this demo does not charge cards, hold customer funds, or issue real refunds.
 
 1. **Buy in the chat.** The buyer asks about inventory on WhatsApp. A Strands agent checks the catalog through AgentCore Gateway, proposes a discount within the configured 10% limit, and returns a hosted checkout link.
-2. **Confirm the hold.** A signed mock-provider webhook confirms the simulated payment. The seller receives an RCS card, with SMS fallback, describing the held order.
-3. **Record dispatch and delivery.** The seller sends a dispatch photo. An SMS delivery code lets the buyer confirm receipt and authorize release through the same policy boundary.
+2. **Confirm the hold.** A signed mock-provider webhook confirms the simulated payment. The seller receives an alert through the RCS/SMS router. The two-iPhone demo uses its SMS fallback; RCS handset delivery remains untested.
+3. **Record dispatch and delivery.** The seller sends the order ID and dispatch photo through WhatsApp. An SMS delivery code lets the buyer confirm receipt and authorize release through the same policy boundary.
 4. **Call a Truce.** A damage report holds the payout. A fresh challenge code must appear beside the item in a new buyer photo. Bedrock evaluates the evidence; the policy service decides which compensation options are permitted.
 5. **Enforce the decision.** AgentSafe checks identity, order state, available funds, amount limits, evidence and refund frequency. The executor verifies the signed authorization, exact proposal, expiry and one-use nonce before appending a ledger entry. Above-cap proposals wait for a supervisor's signed SES approval link.
 
-Both parties can receive an SES receipt and evidence pack. A model proposal alone cannot authorize a refund.
+Both parties can receive an SES receipt and evidence pack. A model proposal alone cannot authorize a refund. The planned three-minute recording follows one order through a supervisor-approved refund, with two phone views beside an email/console panel.
 
 ## How we built it
 
@@ -24,9 +24,9 @@ Both parties can receive an SES receipt and evidence pack. A model proposal alon
 
 ## Accomplishments and validation
 
-The five stacks are deployed, the AgentCore runtime is ready, and a real Strands invocation used Gateway to retrieve the camera bag's inventory from the deployed catalog. A direct Bedrock Converse check also succeeded. SES and SMS sandbox identities are configured, and AWS accepted the setup email and SMS messages. The RCS test registration is approved, with two-way SNS routing and S3 media storage configured.
+The five stacks are deployed, the AgentCore runtime is ready, and a real Strands invocation used Gateway to retrieve the camera bag's inventory from the deployed catalog. A direct Bedrock Converse check also succeeded. A synthetic SNS event traversed the deployed ingress and agent, producing an SMS reply that the recipient confirmed. A separate synthetic RCS-shaped event exercised the SMS fallback. SES accepted the setup email. The RCS test registration is approved, with two-way SNS routing and S3 media storage configured; neither synthetic check establishes real inbound RCS delivery.
 
-Automated tests cover authorization binding, policy limits, nonce replay, ledger permissions, workflow behavior, deployment packaging and inbound message normalization. The full phone workflow and recording are still pending WhatsApp migration and a supported RCS test device as of 25 October 2026.
+Automated tests cover authorization binding, policy limits, nonce replay, ledger permissions, workflow behavior, deployment packaging and inbound message normalization. The full two-phone workflow and recording are still pending WhatsApp migration as of 25 October 2026. Both available iPhones lack RCS settings, so the demo will label RCS as configured but untested rather than present SMS delivery as RCS.
 
 ## Challenges and lessons
 
