@@ -1,0 +1,2 @@
+# Runtime dependencies bundled into every Lambda (kept tiny; boto3 is provided by the runtime).
+pyyaml>=6.0
