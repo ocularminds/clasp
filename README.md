@@ -143,17 +143,27 @@ PAYMENT_PENDING ─webhook(HMAC)→ HELD ─dispatch photo→ DISPATCHED ─SMS 
 Each arrow that moves money is `propose → AgentSafe.decide → executor`. The webhook, the delivery
 code and the supervisor's approval link are all just evidence; none of them can write the ledger.
 
+## Demo
+
+`demo/RUNBOOK.md` is the 3-minute script: buy → RCS hold card → SMS code → Truce with the injection attempt →
+SES approval → console view. `make decisions` tails the AgentSafe decision log for the final shot.
+`docs/architecture.md` has the diagram; `docs/decisions.md` records why things are the way they are.
+
 ## Human-only steps
 
-These cannot be scripted and must be done in the console before `make deploy` is meaningful:
+These cannot be scripted and must be done before `make deploy` is meaningful:
 
-1. Link the WhatsApp Business Account in the End User Messaging Social console; put the phone
-   number ID in `.env` (`WHATSAPP_PHONE_NUMBER_ID`).
-2. Create the RCS agent and register test devices; request an SMS origination number; put both in
-   one pool (`RCS_POOL_ID`). Verify destination numbers while in the SMS sandbox.
-3. Verify SES identities (`SES_FROM_EMAIL`, `SUPERVISOR_EMAIL`, demo buyer/seller emails).
-4. Enable Bedrock model access for the Claude model in `BEDROCK_MODEL_ID`.
-5. Create the ACE opportunity with campaign code `AWS CDS Agentic AI Hackathon -Sept. 2026`.
+1. `aws login` (or configure credentials) for the target account; the project deploys to `us-east-1` via `.env`.
+2. Link the WhatsApp Business Account in the End User Messaging Social console; put the phone
+   number ID and WABA ID in `.env` (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`).
+3. Create the RCS agent and register test devices; request an SMS origination number; put both in
+   one pool (`RCS_POOL_ID`, `SMS_ORIGINATION_IDENTITY`). Verify destination numbers while in the SMS sandbox.
+4. Verify SES identities (`SES_FROM_EMAIL`, `SUPERVISOR_EMAIL`, demo buyer/seller emails).
+5. Enable Bedrock model access for the Claude model in `BEDROCK_MODEL_ID`.
+6. After `make deploy`: bind the WABA event destination and the pool's two-way channel to the inbound SNS
+   topics (two CLI commands in `demo/RUNBOOK.md`), then `make agent-deploy` and `make seed`.
+7. Export `docs/architecture.png` from the brief for the Devpost architecture field.
+8. Create the ACE opportunity with campaign code `AWS CDS Agentic AI Hackathon -Sept. 2026`.
 
 ## License
 
