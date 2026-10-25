@@ -38,7 +38,7 @@ def fetch_whatsapp_media(inbound: Inbound) -> list[str]:
         if pn and settings.media_bucket:
             from ..common.aws import client
 
-            client("socialmessaging").get_whats_app_message_media(
+            client("socialmessaging").get_whatsapp_message_media(
                 mediaId=m["id"], originationPhoneNumberId=pn,
                 destinationS3File={"bucketName": settings.media_bucket, "key": key},
             )
