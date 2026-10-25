@@ -61,10 +61,16 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="use .env as-is instead of offline defaults")
     ap.add_argument("--agent", choices=["scripted", "llm"], default="scripted")
     ap.add_argument("--reset", action="store_true", help="wipe demo/state first")
+    ap.add_argument("--chat", action="store_true", help="interactive: type as the buyer; messages go through ingress → agent")
+    ap.add_argument("--as", dest="as_party", default="buyer_demo", help="--chat: party_id to speak as (buyer_demo | seller_demo | buyer_demo_2)")
     args = ap.parse_args()
 
     if not args.live:
         _offline_defaults()
+    if args.agent == "llm":
+        os.environ["AGENT_MODE"] = "local"       # Strands agent in-process (needs Bedrock credentials)
+    elif not args.live:
+        os.environ["AGENT_MODE"] = "scripted"
     if args.reset:
         import shutil
 
@@ -87,6 +93,9 @@ def main() -> int:
     media.put("live/demo.jpg", b"\xff\xd8\xff demo live photo with code", "image/jpeg")
 
     # One refund per buyer per 30 days is policy, so `all` uses a second buyer for the escalation.
+    if args.chat:
+        return chat(args.as_party, stores)
+
     scenarios = [("truce", buyer), ("escalate", subs["buyer_demo_2"])] if args.scenario == "all" else [(args.scenario, buyer)]
     for scenario, who in scenarios:
         run_order(scenario, who, seller, stores, tools, pay, approvals, fmt)
@@ -167,6 +176,44 @@ def run_order(scenario, buyer, seller, stores, tools, pay, approvals, fmt):
     for d in stores.decisions_for_order(oid):
         colour = {"allow": "32", "deny": "31", "escalate": "33"}[d["decision"]]
         print(f"    \033[{colour}m{d['decision']:<8}\033[0m {d['action']:<11} {fmt(int(d['amount_minor']), d['currency']):>10}  {d['reason'][:70]}")
+
+
+def chat(party_id: str, stores) -> int:
+    """Console REPL: each line is an inbound message from `party_id`'s phone, routed through ingress
+    exactly like an SNS event would be. `/photo <key>` attaches a media key; `/tap <button_id>` taps a button."""
+    from services.ingress.dispatch import handle_inbound
+    from services.ingress.normalize import Inbound
+    from services.psp_mock.handler import pay as pay_checkout
+
+    party = stores.get_party(party_id)
+    if not party:
+        raise SystemExit(f"unknown party {party_id}")
+    channel = "whatsapp" if party["role"] == "buyer" else "rcs"
+    print(f"chatting as {party['name']} ({party['phone']}) on {channel}. Commands: /photo <media_key>, /tap <button_id>, "
+          f"/pay <checkout_id>, /quit")
+    while True:
+        try:
+            line = input(f"{party['name']}> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not line:
+            continue
+        if line in {"/quit", "/q"}:
+            return 0
+        media, button, text = [], None, line
+        if line.startswith("/photo "):
+            media, text = [{"id": line.split(maxsplit=1)[1], "mime": "image/jpeg", "kind": "image"}], ""
+        elif line.startswith("/tap "):
+            bid = line.split(maxsplit=1)[1]
+            button, text = {"id": bid, "title": bid.split(":")[-1]}, bid.split(":")[-1]
+        elif line.startswith("/pay "):
+            status, body = pay_checkout(line.split(maxsplit=1)[1])
+            result("webhook → propose_hold", body)
+            continue
+        out = handle_inbound(Inbound(channel=channel, sender=party["phone"], to=None, text=text, media=media, button=button))
+        if out.get("tools_called"):
+            print(f"  (tools: {', '.join(out['tools_called'])})")
 
 
 def _outbox() -> list[dict]:

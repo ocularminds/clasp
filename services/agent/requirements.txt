@@ -1,0 +1,7 @@
+# Runtime container for AgentCore (built by `agentcore launch`). Tools run in Lambda via Gateway,
+# so the agent image only needs the SDKs plus the shared services package (copied by the toolkit).
+strands-agents>=1.0
+bedrock-agentcore>=0.1
+boto3>=1.40
+pyyaml>=6.0
+requests>=2.32
