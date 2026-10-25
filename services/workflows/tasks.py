@@ -75,7 +75,9 @@ def notify_seller_funds_held(order_id: str, output: dict | None = None) -> dict:
         rich_card={"title": "Funds secured by provider", "description": f"{amount} held for {o.get('item_name')}. "
                    "Confirmed by the payment provider's webhook, not a screenshot. Upload a dispatch photo to continue.",
                    "media_url": item_image, "suggestions": [{"text": "Upload dispatch photo", "postback": f"dispatch:{order_id}"}]},
-        fallback_text=text,
+        fallback_text=(f"Clasp: {amount} confirmed in the payment simulation for order {order_id}. "
+                       "Open your Clasp WhatsApp chat and send this order ID with a photo of the packed parcel "
+                       "to record dispatch."),
     )
     return {"message_id": mid}
 

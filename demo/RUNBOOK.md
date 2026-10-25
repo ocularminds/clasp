@@ -164,14 +164,22 @@ state. Confirm the runtime is `READY` before starting a phone conversation.
 
 ## 3. First real phone run
 
+The agreed demo uses **two iPhones**: buyer and seller both converse on WhatsApp, SMS carries
+alerts, and a desktop email/console capture supplies the third panel. RCS stays configured but
+**untested on a supported handset**. It is not a prerequisite for this revised recording.
+Finish the WhatsApp migration, save the real AWS phone/WABA IDs, bind the inbound topic and
+redeploy before beginning this sequence.
+
 Prepare a parcel/camera bag, a seller dispatch photo, a visibly damaged item/strap, and paper
 for the fresh challenge code. Use real photos; the simulator's placeholder JPEG bytes cannot
 exercise Bedrock vision.
 
-Open three recording views: buyer WhatsApp, seller RCS, and SMS/email. For a literal three-phone
-shot, mirror or record three actual devices. The third phone can show the supervisor mailbox;
-the SMS delivery code still goes to the configured buyer phone. Start one visible timer or clap
-to synchronize the recordings. Disable unrelated notification previews before recording.
+Open three recording views: buyer phone, seller phone, and the supervisor email/console panel.
+Record both iPhone screens in portrait. Record the email panel at a readable desktop zoom with
+only the relevant Clasp message open. Start one visible timer or clap to synchronize the
+captures. Disable unrelated notification previews before recording. Both phone owners must
+initiate a WhatsApp chat with the business number so each has an active customer-service window.
+The seller can begin with “I'm ready to dispatch my next Clasp order.”
 
 Start the ingress and decision logs in separate terminals:
 
@@ -185,59 +193,79 @@ make decisions
    live Bedrock model. Keep the conversation inside WhatsApp's customer-service window.
 2. Accept the order and open the hosted checkout link. The button creates a **simulated payment**;
    no card or bank credentials are needed. Confirm the order reaches `HELD` before dispatch.
-3. On the seller phone, inspect the RCS card and tap “Upload dispatch photo.” Send the real photo
-   and identify the order if asked. Watch the **first actual RCS event** in ingress logs.
-4. Confirm an `ingress.record` entry, followed by `agent.turn.in` with `channel=rcs`. Text messages
-   have an RCS agent ID as `destinationNumber`; taps have JSON `messageBody` with `postbackData`;
-   photos have `mediaStatus=SUCCESS`, `s3Bucket`, and `s3Key`. The log records payload field/type
-   shape without logging those media URLs or extra raw values. Use that shape to diagnose any
-   mismatch before continuing.
-5. The dispatch photo must appear under `inbound/rcs/` in the media bucket, and the order should
-   become `DISPATCHED`. Confirm the SMS delivery code arrives on the buyer phone.
-6. For the Truce path, **do not redeem the delivery code**. Say “The strap arrived torn.” The
+3. On the seller phone, show the SMS hold alert. The RCS router falls back to SMS for this
+   unverified RCS destination. Open the seller's WhatsApp chat with Clasp and send “Dispatch
+   order [the complete order ID from the SMS]” with the real parcel photo. Include the complete
+   ID rather than only its final six characters. The agent uses that ID to find the seller's
+   order; `my_orders` currently lists a buyer's orders only.
+4. Confirm `ingress.record` and `agent.turn.in` with `channel=whatsapp` for the seller's photo.
+   Verify the media was fetched into the configured bucket, the dispatch callback completed,
+   and the stored order reached `DISPATCHED`. Wait for the actual workflow state before
+   advancing; a tool response can precede Step Functions finishing its next task.
+5. Show the SMS delivery code on the buyer phone, then return to WhatsApp. **Do not redeem the
+   code** for this dispute scenario: redeeming it releases the payout. Say “The strap arrived torn.” The
    workflow holds the payout and returns a fresh challenge. Write that exact code next to the
    item, photograph it, and send the image through WhatsApp before the challenge expires.
-7. Request a $1,000 refund. Show an actual AgentSafe denial and an unchanged ledger. If the model
+6. After evidence verification succeeds, request a $1,000 refund. Show an actual AgentSafe denial
+   and an unchanged ledger. If the model
    declines before calling a tool, explain that accurately; do not label it a policy-service
    decision. The deterministic simulator separately demonstrates a forced excessive proposal.
-8. Choose the partial refund offered by policy. Show the resulting signed decision, ledger entry,
-   and evidence email. For a happy-path order instead, redeem the SMS code and confirm `RELEASED`.
+7. Show the offered compensation options without executing a partial refund. Request the **full
+   amount actually held** instead: normally $108 after the 10% discount on the $120 bag. Confirm
+   AgentSafe returns `escalate` and the stored order reaches `ESCALATED`, with no refund ledger entry.
+8. In the desktop panel, open the SES supervisor email for this order and follow its signed
+   Approve link. Confirm `RESOLVED_REFUND`, one `REFUND` ledger entry for the held amount, and the
+   evidence-pack email. The shared demo mailbox represents all email roles; label the approval
+   view “Supervisor” without suggesting that three different mailboxes were used.
 
 Do not use `make simulate --live` as evidence of a handset run. The automated simulator calls
 tools directly and uses placeholder photos; its immediate steps also do not wait for real
 Step Functions callbacks. `make simulate ARGS="--chat --live --agent llm"` is a diagnostic
 console conversation, not a phone recording.
 
-### Above-cap approval scenario
+### One refund in this recording
 
-The policy permits one refund per buyer per 30 days. To film both a completed partial refund
-and a completed supervisor-approved refund, use a **second verified buyer identity** and a
-second order. Do not erase a real decision or ledger entry to bypass this rule.
+The policy permits one refund per buyer per 30 days. The accepted script therefore completes
+**one supervisor-approved refund on one order**. Do not execute a partial refund first and then
+try to film another refund using the same buyer. Do not erase a real decision or ledger entry
+to bypass the limit. A separate completed refund scenario would need a second verified buyer
+identity and another order; that is outside this two-phone recording.
 
-On the second order: pay in the mock checkout, dispatch, report damage, verify the fresh photo,
-and request the full held amount. Confirm `ESCALATED`, open the SES supervisor email, and
-follow its signed Approve link. Show the resulting refund and evidence pack. Each approval is
-bound to that proposal and the links expire after 48 hours.
+Each supervisor approval is bound to its proposal and expires after 48 hours. For a separate
+happy-path run, redeem the delivery code and confirm `RELEASED` instead of opening a dispute.
 
-With only one buyer available, demonstrate escalation first or choose one resolution path;
-do not claim that both completed on the same buyer after a previous refund.
+### Optional first real RCS event
+
+This remains a separate, unfinished channel check. Run it only with a supported device whose
+RCS destination is `VERIFIED` for the agent; the available iPhones currently lack RCS settings.
+Do not label an SMS fallback or a synthetic SNS event as a handset RCS test.
+
+On a future supported seller device, inspect the RCS hold card, tap “Upload dispatch photo,”
+and send a real photo. Check `ingress.record`, followed by `agent.turn.in` with `channel=rcs`.
+Text events use the RCS agent ID as `destinationNumber`; taps have JSON `messageBody` with
+`postbackData`; photos have `mediaStatus=SUCCESS`, `s3Bucket`, and `s3Key`. The photo should
+arrive under `inbound/rcs/` in the configured bucket. Ingress logs field/type shape without
+logging raw media URLs; use that shape to diagnose the first actual event before proceeding.
 
 ## 4. Three-minute recording script
 
-Capture the successful workflows before editing. Preserve their order and label any accelerated
-waiting time. Keep the buyer, seller, and SMS/email views visible in one split screen until the
+Use [the conversational narration](NARRATION.md) for the voice recording. The table below is
+the shot guide; do not read its technical labels aloud.
+
+Capture the successful workflow before editing. Preserve its order and label any accelerated
+waiting time. Keep the buyer, seller, and email/console views visible in one split screen until the
 final console shot. Never display verification codes, credentials, account recovery details,
 or unrelated inbox contents. The demo delivery/challenge codes may be visible after the run
 has completed and they can no longer authorize an action.
 
 | Time | Picture | Narration |
 |---|---|---|
-| 0:00–0:20 | Three real phone views; Clasp title | “Chat marketplaces have a trust gap. Clasp coordinates the purchase, but every action affecting money passes a separate policy check.” |
+| 0:00–0:20 | Two real phone views and an email/console panel; Clasp title | “Chat marketplaces have a trust gap. Clasp coordinates the purchase, but every action affecting money passes a separate policy check. This demo uses WhatsApp, SMS and email; RCS is configured but handset delivery is untested.” |
 | 0:20–0:50 | Buyer asks, receives 10% offer, uses mock checkout | “Claude checks live inventory through AgentCore Gateway. The checkout is a payment simulation; a signed provider webhook confirms the hold.” |
-| 0:50–1:10 | Seller RCS card, suggestion tap, dispatch photo | “The seller receives an RCS card and sends the parcel photo. The workflow records the dispatch.” |
-| 1:10–1:25 | Buyer SMS delivery code; then damage report | “An SMS code confirms delivery. Here the buyer reports damage before releasing the payout, so Clasp calls a Truce.” |
-| 1:25–2:15 | Fresh photo challenge, actual denial, offered partial refund | “The image is evidence, not permission. AgentSafe checks the requested amount, identity and policy. The $1,000 request is refused; a permitted resolution gets a signed authorization.” |
-| 2:15–2:40 | Second buyer/order; SES approval and evidence | “A larger refund needs a supervisor. This separate order waits for the signed approval link before anything executes.” |
+| 0:50–1:10 | Seller SMS hold alert, then WhatsApp order ID and dispatch photo | “The seller receives an SMS alert, opens WhatsApp and sends the order ID with the parcel photo. The workflow records the dispatch.” |
+| 1:10–1:25 | Buyer SMS delivery code; then WhatsApp damage report | “Redeeming this SMS code would release the payout. The buyer reports damage before redeeming it, so Clasp calls a Truce.” |
+| 1:25–2:05 | Fresh photo challenge, actual denial, full refund request | “The image is evidence, not permission. AgentSafe checks the requested amount, identity and policy. The $1,000 proposal is denied. Refunding the amount held is above the automatic cap, so the order waits for a supervisor.” |
+| 2:05–2:40 | Same order: SES approval, refund result and evidence pack | “The supervisor sees the amount, reason and evidence before approving. The signed link authorizes this proposal only. The executor records one simulated refund, and both parties receive the evidence.” |
 | 2:40–3:00 | Console full screen: Step Functions, decisions, ledger | “Only the executor can append the ledger. It verifies the signature, exact scope, expiry and one-use nonce. Nothing moves until both sides are kept whole.” |
 
 If the recorded evidence differs from the script, update the narration. Show the actual decision
@@ -254,22 +282,42 @@ uv pip install --python .venv/bin/python -e '.[assets]'
 source are recorded in `docs/assets/manifest.json`. The architecture describes the implemented
 CDK resources; it does not claim a Knowledge Base or EventBridge integration.
 
-Save the real phone captures and final console shot under `demo/recordings/`. The optional
-`demo/compose_demo.py` script assembles prepared 160-second phone clips and a 20-second console
-clip into a 1080p three-minute video; it requires actual input recordings.
+Save the real phone captures and final console shot under `demo/recordings/`. Prepare synchronized,
+edited clips covering the first 160 seconds: two portrait phone captures and one email/console
+capture. The script preserves the full frame of each source. Crop the desktop recording to the
+relevant message or console view before assembly so text remains legible. Narration should span
+180 seconds, including deliberate pauses; do not generate dialogue as if it were recorded app output.
+
+```bash
+.venv/bin/python demo/compose_demo.py \
+  --buyer demo/recordings/buyer.mp4 \
+  --seller demo/recordings/seller.mp4 \
+  --panel demo/recordings/email-console.mp4 \
+  --console demo/recordings/final-console.mp4 \
+  --narration demo/recordings/narration.m4a
+```
+
+The composer allocates 480 pixels to each phone and 960 pixels to the email/console panel, then
+shows the final 20-second console clip full screen. It exports a 1920 × 1080, 180-second MP4,
+requires actual recordings, and refuses to overwrite an existing output. `--third` remains an
+alias for `--panel` for older commands. Review the full export and check phone text at playback size.
 
 Before submitting the existing [Devpost project](https://devpost.com/software/clasp-nothing-moves-until-both-sides-are-kept-whole),
 upload the architecture, add a working public or unlisted YouTube/Vimeo demo-video URL, check the
 project text against the recorded evidence, and review the final rules/terms checkbox. Confirm
 that the repository link is accessible to the judges. The [hackathon instructions](https://github.com/aws-cds-partner/aws-cds-agentic-ai-partner-hackathon-private/blob/main/README.md)
-allow a private repository with the `aws-cds-partner` judging account invited. Personal GitHub
-repositories give collaborators write access; obtain the owner's approval before granting it.
+allow a private repository with the `aws-cds-partner` judging account invited. The owner approved
+that personal-repository write access, and the invitation was sent on 2026-10-25. Verify acceptance
+before judging; the invitation link is `https://github.com/ocularminds/clasp/invitations`.
 The judges inspect the default branch's latest commit. Keep access through 2026-11-19.
 
 The draft already contains an ACE opportunity ID. Verify its creation date and the
 `AWS CDS Agentic AI Hackathon -Sept. 2026` campaign association rather than creating a duplicate.
 An opportunity pending AWS review may have disabled edit controls; add the campaign when AWS
-allows edits before treating that submission requirement as complete.
+allows edits before treating that submission requirement as complete. The user confirmed no AWS
+Marketing Development Funds funding, so use `AwsFundingUsed=No`. Promotional credits are separate.
+`UpdateOpportunity` replaces the writable document: fetch the latest opportunity, preserve all
+existing writable fields, and use its current `LastModifiedDate` when adding the marketing fields.
 
 The deadline is **Wednesday 2026-10-28, 13:00 PDT**: **20:00 UTC / 21:00 Stockholm**. A saved draft
 is not a submitted project. Confirm the submission success page and save its receipt.
