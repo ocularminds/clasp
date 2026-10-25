@@ -26,7 +26,7 @@ Both parties can receive an SES receipt and evidence pack. A model proposal alon
 
 The five stacks are deployed, the AgentCore runtime is ready, and a real Strands invocation used Gateway to retrieve the camera bag's inventory from the deployed catalog. A direct Bedrock Converse check also succeeded. A synthetic SNS event traversed the deployed ingress and agent, producing an SMS reply that the recipient confirmed. A separate synthetic RCS-shaped event exercised the SMS fallback. SES accepted the setup email. The RCS test registration is approved, with two-way SNS routing and S3 media storage configured; neither synthetic check establishes real inbound RCS delivery.
 
-Automated tests cover authorization binding, policy limits, nonce replay, ledger permissions, workflow behavior, deployment packaging and inbound message normalization. The full two-phone workflow and recording are still pending WhatsApp migration as of 25 October 2026. Both available iPhones lack RCS settings, so the demo will label RCS as configured but untested rather than present SMS delivery as RCS.
+Automated tests cover authorization binding, policy limits, nonce replay, ledger permissions, workflow behavior, deployment packaging and inbound message normalization. As of 25 October 2026, the WhatsApp number is registered with AWS, SNS routing is bound, and its phone ID is deployed. The full two-phone workflow and recording still need a real handset run. Both available iPhones lack RCS settings, so the demo will label RCS as configured but untested.
 
 ## Challenges and lessons
 
