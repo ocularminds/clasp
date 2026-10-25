@@ -53,6 +53,54 @@ def test_sms_and_rcs_normalize():
     assert parse_sns_record(sns({"eventType": "TEXT_DELIVERED"})["Records"][0]) == []
 
 
+def test_documented_rcs_text_and_suggestion_envelopes():
+    envelope = {"originationNumber": "+15550000002", "destinationNumber": "rcs-test-agent",
+                "inboundMessageId": "rcs-message-1", "messageBody": "Ready to dispatch"}
+    msg = parse_sns_record(sns(envelope)["Records"][0])[0]
+    assert msg.channel == "rcs" and msg.to == "rcs-test-agent"
+    assert msg.text == "Ready to dispatch"
+    envelope["messageBody"] = json.dumps({"type": "SUGGESTION", "text": "Upload dispatch photo", "postbackData": "dispatch:ord_1"})
+    msg = parse_sns_record(sns(envelope)["Records"][0])[0]
+    assert msg.text == "Upload dispatch photo"
+    assert msg.button == {"id": "dispatch:ord_1", "title": "Upload dispatch photo"}
+    # An ordinary user message containing JSON must not disappear.
+    envelope["messageBody"] = '{"question":"is the bag available?"}'
+    assert parse_sns_record(sns(envelope)["Records"][0])[0].text == envelope["messageBody"]
+
+
+def test_documented_rcs_s3_photo_envelope(monkeypatch):
+    from services.ingress.dispatch import fetch_url_media
+
+    monkeypatch.setenv("MEDIA_BUCKET", "clasp-test-media")
+    body = {"mediaStatus": "SUCCESS", "s3Bucket": "clasp-test-media", "s3Key": "inbound/rcs/message-id#photo.jpg",
+            "mimeType": "image/jpeg", "fileName": "photo.jpg", "fileSizeBytes": 1024}
+    envelope = {"originationNumber": "+15550000002", "destinationNumber": "rcs-test-agent", "messageBody": json.dumps(body)}
+    msg = parse_sns_record(sns(envelope)["Records"][0])[0]
+    assert msg.channel == "rcs" and msg.text == ""
+    assert fetch_url_media(msg) == ["inbound/rcs/message-id#photo.jpg"]
+    msg.media[0]["s3_bucket"] = "another-account-bucket"
+    with pytest.raises(ValueError, match="configured bucket"):
+        fetch_url_media(msg)
+    msg.media[0].update(s3_bucket="clasp-test-media", s3_key="private/other-order.jpg")
+    with pytest.raises(ValueError, match="inbound/rcs/"):
+        fetch_url_media(msg)
+
+
+def test_rcs_media_failure_does_not_supply_evidence():
+    body = {"mediaStatus": "ROLE_ASSUME_FAILED", "mediaStatusMessage": "Cannot assume upload role"}
+    msg = parse_sns_record(sns({"originationNumber": "+15550000002", "destinationNumber": "rcs-test-agent",
+                                "messageBody": json.dumps(body)})["Records"][0])[0]
+    assert not msg.media and "resend the photo" in msg.text
+
+
+def test_unrecognized_envelope_logs_shape_without_values(caplog):
+    result = ingress.lambda_handler(sns({"unknown": {"token": "private-token", "email": "private@example.com"}}), None)
+    assert result["handled"] == 0
+    record = next(json.loads(r.message) for r in caplog.records if '"event": "ingress.record"' in r.message)
+    assert record["parsed"] == 0 and "unknown" in record["shape"]
+    assert "private-token" not in json.dumps(record) and "private@example.com" not in json.dumps(record)
+
+
 @pytest.fixture
 def plumbing(stores, kms, kms_key, agentsafe, tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_MODE", "scripted")

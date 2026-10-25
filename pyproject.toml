@@ -14,11 +14,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8",
+  "pytest-env>=1.1",
   "moto[all]>=5.0",
   "cryptography>=43",
   "aws-cdk-lib>=2.200",
   "constructs>=10",
 ]
+assets = ["Pillow==12.3.0"]
 agent = [
   "strands-agents>=1.0",
   "strands-agents-tools>=0.2",
@@ -41,6 +43,29 @@ env = [
   "NOTIFY_MODE=memory",
   "EVIDENCE_MODE=stub",
   "AGENT_MODE=scripted",
+  "AGENT_TOOLS=local",
+  "MEMORY_ID=",
+  "GATEWAY_URL=",
+  "GUARDRAIL_ID=",
+  "COGNITO_USER_POOL_ID=",
+  "SSM_PREFIX=",
+  "MEDIA_BUCKET=",
+  "KMS_SIGNING_KEY_ID=",
+  "AGENTSAFE_FUNCTION_ARN=",
+  "EXECUTOR_FUNCTION_ARN=",
+  "AGENT_RUNTIME_ARN=",
+  "STATE_MACHINE_ARN=",
+  "PSP_WEBHOOK_SECRET_ARN=",
+  "API_BASE_URL=http://localhost:8080",
+  "DEMO_BUYER_PHONE=+15550000001",
+  "DEMO_BUYER2_PHONE=+15550000004",
+  "DEMO_SELLER_PHONE=+15550000002",
+  "DEMO_SUPERVISOR_PHONE=+15550000003",
+  "DEMO_BUYER_EMAIL=buyer@example.com",
+  "DEMO_BUYER2_EMAIL=buyer2@example.com",
+  "DEMO_SELLER_EMAIL=seller@example.com",
+  "SES_FROM_EMAIL=clasp@example.com",
+  "SUPERVISOR_EMAIL=supervisor@example.com",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 

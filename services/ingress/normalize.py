@@ -4,9 +4,9 @@
 
 Channels and their payloads:
 * WhatsApp (End User Messaging Social → SNS): {"context": {...}, "whatsAppWebhookEntry": "<Meta webhook entry JSON>"}
-* SMS / RCS two-way (End User Messaging SMS v2 → SNS): {"originationNumber", "destinationNumber", "messageBody", ...}
-  TODO(human): confirm RCS inbound field names (suggestion postback, media URL) against a real event once the
-  RCS agent is live; the parser below is deliberately tolerant.
+* SMS / RCS two-way: {"originationNumber", "destinationNumber", "messageBody", ...}.
+  An RCS destination is an agent ID. Suggestions and media metadata arrive as JSON in messageBody.
+  See https://docs.aws.amazon.com/sms-voice/latest/userguide/rcs-inbound-media.html.
 """
 from __future__ import annotations
 
@@ -49,9 +49,25 @@ def _loads(v: Any) -> Any:
     return v
 
 
+def _record_body(record: dict) -> Any:
+    return _loads(record.get("Sns", {}).get("Message") or record.get("Message") or record.get("body") or record)
+
+
+def record_shape(record: dict) -> Any:
+    """Bounded field/type diagnostics, without message text, phone numbers, or signed URLs."""
+    def shape(value: Any, depth: int = 3) -> Any:
+        value = _loads(value)
+        if depth > 0 and isinstance(value, dict):
+            return {str(k)[:80]: shape(v, depth - 1) for k, v in list(value.items())[:30]}
+        if depth > 0 and isinstance(value, list):
+            return [shape(value[0], depth - 1)] if value else []
+        return type(value).__name__
+    return shape(_record_body(record))
+
+
 def parse_sns_record(record: dict) -> list[Inbound]:
     """One SNS record may carry several messages (WhatsApp batches). Returns [] for non-message events."""
-    body = _loads(record.get("Sns", {}).get("Message") or record.get("Message") or record.get("body") or record)
+    body = _record_body(record)
     if not isinstance(body, dict):
         return []
     if "whatsAppWebhookEntry" in body:
@@ -101,7 +117,19 @@ def _parse_whatsapp(body: dict) -> list[Inbound]:
 
 def _parse_sms_like(body: dict) -> Inbound:
     text = body.get("messageBody") or body.get("text") or ""
+    destination = str(body.get("destinationNumber") or "")
+    is_rcs = destination.startswith("rcs-") or (body.get("messageType") or body.get("channel") or "").upper() == "RCS"
+    content = _loads(text) if is_rcs else None
     media = []
+    button = None
+    if isinstance(content, dict) and (content.get("type") == "SUGGESTION" or "postbackData" in content or "mediaStatus" in content):
+        text = content.get("text") or ""
+        if content.get("postbackData"):
+            button = {"id": content["postbackData"], "title": text}
+        if content.get("mediaStatus") == "SUCCESS" and content.get("s3Bucket") and content.get("s3Key"):
+            media.append({"s3_bucket": content["s3Bucket"], "s3_key": content["s3Key"], "mime": content.get("mimeType")})
+        elif content.get("mediaStatus"):
+            text = "[RCS media upload failed; ask the sender to resend the photo.]"
     for key in ("mediaUrls", "mediaUrl", "fileUrl", "media"):
         v = body.get(key)
         if isinstance(v, str):
@@ -109,11 +137,11 @@ def _parse_sms_like(body: dict) -> Inbound:
         elif isinstance(v, list):
             media.extend({"url": u if isinstance(u, str) else u.get("url"), "mime": (u.get("mimeType") if isinstance(u, dict) else None)}
                          for u in v)
-    button = None
     postback = body.get("postbackData") or (body.get("suggestionResponse") or {}).get("postbackData")
     if postback:
         button = {"id": postback, "title": (body.get("suggestionResponse") or {}).get("text") or text}
-    channel = "rcs" if (body.get("messageType") or body.get("channel") or "").upper() == "RCS" or body.get("rcs") or postback or media else "sms"
-    return Inbound(channel=channel, sender=_e164(body.get("originationNumber")) or "", to=_e164(body.get("destinationNumber")),
+    channel = "rcs" if is_rcs or body.get("rcs") or postback or media else "sms"
+    to = destination if destination.startswith("rcs-") else _e164(destination)
+    return Inbound(channel=channel, sender=_e164(body.get("originationNumber")) or "", to=to,
                    text=text, media=media, button=button, message_id=body.get("inboundMessageId") or body.get("messageId"),
                    ts=None, raw=body)

@@ -1,12 +1,13 @@
 # Clasp — make targets. Every target reads .env when present.
 PY        := .venv/bin/python
 UV        := uv
+CDK       := ../node_modules/.bin/cdk
 STAGE     ?= dev
 export JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1
 -include .env
 export
 
-.PHONY: help venv deps test lint synth bootstrap deploy destroy seed simulate logs decisions agent-deploy agent-local api-local clean
+.PHONY: help venv deps test lint synth diff bootstrap deploy destroy seed simulate logs decisions agent-deploy agent-local api-local clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -15,6 +16,7 @@ venv:            ## Create the Python 3.12 virtualenv with uv
 	$(UV) venv --python 3.12 .venv
 
 deps: venv       ## Install dev + agent dependencies into .venv
+	npm ci --ignore-scripts
 	$(UV) pip install --python $(PY) -e ".[dev]"
 	$(UV) pip install --python $(PY) -e ".[agent]" || echo "agent extras skipped (install later with: make deps-agent)"
 
@@ -28,17 +30,20 @@ lint:            ## Byte-compile everything (cheap sanity check)
 	$(PY) -m compileall -q services infra demo tests
 
 synth:           ## cdk synth all stacks
-	cd infra && npx --yes cdk@2 synth --quiet --app "../$(PY) app.py" && echo "synth ok (infra/cdk.out)"
+	cd infra && $(CDK) synth --quiet --app "../$(PY) app.py" && echo "synth ok (infra/cdk.out)"
+
+diff:            ## Review changes before deployment
+	cd infra && $(CDK) diff --all --app "../$(PY) app.py"
 
 bootstrap:       ## cdk bootstrap the target account/region
-	cd infra && npx --yes cdk@2 bootstrap --app "../$(PY) app.py"
+	cd infra && $(CDK) bootstrap --app "../$(PY) app.py"
 
 deploy:          ## Deploy every CDK stack, then write outputs into .env
-	cd infra && npx --yes cdk@2 deploy --all --require-approval never --outputs-file cdk-outputs.json --app "../$(PY) app.py"
+	cd infra && $(CDK) deploy --all --require-approval never --outputs-file cdk-outputs.json --app "../$(PY) app.py"
 	$(PY) infra/write_env.py infra/cdk-outputs.json .env
 
 destroy:         ## Tear everything down
-	cd infra && npx --yes cdk@2 destroy --all --force --app "../$(PY) app.py"
+	cd infra && $(CDK) destroy --all --force --app "../$(PY) app.py"
 
 agent-deploy:    ## Deploy the Strands agent to AgentCore Runtime with the starter toolkit
 	$(PY) -m services.agent.deploy

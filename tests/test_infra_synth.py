@@ -117,3 +117,17 @@ def test_api_routes(templates):
     routes = {r["Properties"]["RouteKey"] for r in api.find_resources("AWS::ApiGatewayV2::Route").values()}
     assert routes == {"GET /pay/{checkout_id}", "POST /pay/{checkout_id}", "POST /webhooks/psp", "GET /approvals"}
     templates["messaging"].resource_count_is("AWS::SNS::Topic", 2)
+
+
+def test_rcs_media_upload_role_is_limited_to_its_prefix(templates):
+    messaging = templates["messaging"]
+    statements = _policies_for_role(messaging, "RcsInboundMediaRole")
+    actions = [a for s in statements for a in ([s["Action"]] if isinstance(s["Action"], str) else s["Action"])]
+    assert actions == ["s3:PutObject"]
+    assert "inbound/rcs/*" in json.dumps(statements)
+    assert "inbound/AWS_END_USER_MESSAGING_SETUP_NOTIFICATION" in json.dumps(statements)
+    assert "inbound/*" not in json.dumps(statements)
+    role = next(v for k, v in messaging.find_resources("AWS::IAM::Role").items() if k.startswith("RcsInboundMediaRole"))
+    trust = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
+    assert trust["Principal"]["Service"] == "sms-voice.amazonaws.com"
+    assert trust["Condition"]["StringEquals"]["aws:SourceAccount"] == "123456789012"

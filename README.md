@@ -10,9 +10,10 @@ The agent negotiates, coordinates delivery and triages disputes across WhatsApp,
 email. Every money-moving action it proposes is authorized or denied by an execution control
 plane (AgentSafe) that sits between the agent and the payout ledger.
 
-> Status: the whole path runs offline (`make simulate`), the CDK app synthesizes with IAM tests, and the
-> agent, ingress and channel router are written against the confirmed End User Messaging / SES / AgentCore
-> APIs. Deploying to an account and running on real phones needs the human-only steps at the end of this file.
+> Status: the five CDK stacks and AgentCore runtime are deployed. A real Strands/Bedrock turn called the
+> live Gateway inventory tool successfully; a synthetic SNS ingress check produced a real SMS reply
+> confirmed on the recipient's phone. WhatsApp migration, RCS device eligibility and the full handset
+> demo remain in progress. See [verified deployment status](docs/deployment-status.md) and the [runbook](demo/RUNBOOK.md).
 
 ## The invariant
 
@@ -33,21 +34,24 @@ replayed and wrong-actor authorizations are all refused and nothing is written.
 
 ```bash
 cp .env.example .env               # fill in the TODO(human) values
+make deps                          # use the Node version in .node-version
 make bootstrap                     # once per account/region
+make diff                          # review before deploying
 make deploy                        # five stacks; outputs are merged into .env
+# Bind the channel topics and configure RCS media using demo/RUNBOOK.md.
 make agent-deploy                  # AgentCore Runtime via the starter toolkit; writes AGENT_RUNTIME_ARN
 make seed                          # items, parties, Cognito users
 ```
 
-Then bind the console-created channel resources to the inbound SNS topics (commands in `demo/RUNBOOK.md`).
+The runbook includes both SNS topic bindings and the RCS agent's separate inbound-media settings.
 
 | Stack | What it holds |
 |---|---|
 | `ClaspDevData` | DynamoDB `orders, ledger, decisions, nonces, challenges, items, parties`; media bucket; KMS `ECC_NIST_P256` signing key; Cognito user pool (phone); PSP webhook secret |
 | `ClaspDevWorkflow` | AgentSafe, executor, tools and task Lambdas; the order state machine (`waitForTaskToken` for payment, dispatch, delivery, dispute, approval) |
 | `ClaspDevApi` | HTTP API: `GET/POST /pay/{checkout_id}`, `POST /webhooks/psp`, `GET /approvals` |
-| `ClaspDevMessaging` | Inbound SNS topics for WhatsApp and SMS/RCS, the ingress Lambda, SES sender identity |
-| `ClaspDevAgent` | Bedrock Guardrail (PII masking), AgentCore Memory, AgentCore Gateway + Lambda tools target (Cognito JWT), runtime execution role |
+| `ClaspDevMessaging` | Inbound SNS topics for WhatsApp and SMS/RCS, ingress Lambda, upload-only RCS media role; SES identities are verified separately |
+| `ClaspDevAgent` | Bedrock Guardrail (PII masking), AgentCore Memory, AgentCore Gateway + Lambda tools target (Cognito JWT), runtime execution role and log encryption key |
 
 IAM carries the invariant into the cloud: only the executor role may `PutItem` on the ledger (nobody may delete),
 only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches, can only invoke those two.
@@ -57,13 +61,14 @@ only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches
 
 * **Offline, in two minutes:** `make deps && make test && make simulate`. Every channel message is printed,
   and the run ends with the ledger and the AgentSafe decision log, including the denied "$1,000" injection.
-* **On phones:** the test numbers, WhatsApp opt-in instructions and the supervisor mailbox are listed in
-  `demo/RUNBOOK.md` once the deployment is live (TODO(human): fill after the EUM console steps). WhatsApp
-  stays inside the 24-hour customer-service window because the buyer always initiates.
+* **On phones:** follow `demo/RUNBOOK.md` and arrange access with the team. Personal test numbers and
+  mailboxes stay in the ignored `.env`. WhatsApp stays inside the 24-hour customer-service window
+  because the buyer always initiates.
 * **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
   (delivery = one-time SMS code) and production-grade image forensics (the model only reports; AgentSafe decides).
-  Everything else is real AWS: End User Messaging Social and SMS/RCS v2, SES, AgentCore Runtime/Gateway/Memory,
-  Bedrock + Guardrails, Step Functions, DynamoDB, KMS, Cognito.
+  The live implementation uses End User Messaging Social and SMS/RCS v2, SES, AgentCore Runtime/Gateway/Memory,
+  Bedrock + Guardrails, Step Functions, DynamoDB, KMS and Cognito. The deployment-status file distinguishes
+  verified cloud checks from channel steps that are still pending.
 
 ## Layout
 
@@ -84,7 +89,7 @@ services/
   common/             config, stores (DynamoDB / local), media, logging, clock
 demo/                 seed.py, simulate.py (--chat), decisions.py, local_api.py, RUNBOOK.md
 tests/                pytest + moto (trust core, boundary, e2e order, ingress, agent binding, infra synth)
-docs/                 architecture.md, decisions.md
+docs/                 architecture.md/png, decisions.md, deployment-status.md, assets/
 ```
 
 ## Quick start (offline, no AWS account needed)
@@ -149,9 +154,10 @@ code and the supervisor's approval link are all just evidence; none of them can 
 SES approval → console view. `make decisions` tails the AgentSafe decision log for the final shot.
 `docs/architecture.md` has the diagram; `docs/decisions.md` records why things are the way they are.
 
-## Human-only steps
+## Account and device setup
 
-These cannot be scripted and must be done before `make deploy` is meaningful:
+CLI/API setup can be automated. Account ownership, carrier registration, device acceptance and
+real-phone recording still require the relevant person or service:
 
 1. `aws login` (or configure credentials) for the target account; the project deploys to `us-east-1` via `.env`.
 2. Link the WhatsApp Business Account in the End User Messaging Social console; put the phone
@@ -162,8 +168,8 @@ These cannot be scripted and must be done before `make deploy` is meaningful:
 5. Enable Bedrock model access for the Claude model in `BEDROCK_MODEL_ID`.
 6. After `make deploy`: bind the WABA event destination and the pool's two-way channel to the inbound SNS
    topics (two CLI commands in `demo/RUNBOOK.md`), then `make agent-deploy` and `make seed`.
-7. Export `docs/architecture.png` from the brief for the Devpost architecture field.
-8. Create the ACE opportunity with campaign code `AWS CDS Agentic AI Hackathon -Sept. 2026`.
+7. Export `docs/architecture.png` with `demo/export_assets.py` for the Devpost architecture field.
+8. Verify the existing ACE opportunity's campaign association; do not create a duplicate.
 
 ## License
 

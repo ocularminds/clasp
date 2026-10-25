@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import shutil
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import jsii
-from aws_cdk import BundlingOptions, ILocalBundling
+from aws_cdk import AssetHashType, BundlingOptions, FileSystem, ILocalBundling
 from aws_cdk import aws_lambda as lam
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,13 +48,18 @@ def lambda_code(scope) -> lam.Code:
 
     key = Stack.of(scope).stack_name
     if key not in _code:
+        requirements = " ".join(shlex.quote(line.strip()) for line in (ROOT / "requirements-lambda.txt").read_text().splitlines()
+                                if line.strip() and not line.lstrip().startswith("#"))
         _code[key] = lam.Code.from_asset(
             str(ROOT / "services"),
+            asset_hash=FileSystem.fingerprint(str(ROOT / "services"), extra_hash=requirements,
+                                             exclude=["**/__pycache__", "*.pyc", "agent/requirements.txt"]),
+            asset_hash_type=AssetHashType.CUSTOM,
             exclude=["**/__pycache__", "*.pyc", "agent/requirements.txt"],
             bundling=BundlingOptions(
                 image=lam.Runtime.PYTHON_3_12.bundling_image,
                 command=["bash", "-c", "mkdir -p /asset-output/services && cp -r /asset-input/. /asset-output/services/ "
-                                       "&& pip install -q pyyaml -t /asset-output"],
+                                       f"&& pip install -q {requirements} -t /asset-output"],
                 local=LocalPipBundler(),
             ),
         )

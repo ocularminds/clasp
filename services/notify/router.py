@@ -10,7 +10,7 @@ Console / memory modes print or record, so the demo runs with no phones.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -156,7 +156,7 @@ class AwsNotifier(Notifier):
                                           for b in msg.buttons[:11]]
         r = self._client("pinpoint-sms-voice-v2").send_rcs_message(
             DestinationPhoneNumber=msg.to, OriginationIdentity=pool, RcsMessageContent=rcs_content,
-            MessageTrafficType="TRANSACTIONAL",
+            MessageTrafficType="TRANSACTION",
             FallbackConfiguration={"Channel": "SMS", "MessageBody": (msg.fallback_text or msg.text)[:1600]},
             Context={"correlation_id": msg.correlation_id[:200]} if msg.correlation_id else {},
         )
@@ -193,9 +193,25 @@ class AwsNotifier(Notifier):
 
     def send(self, msg):
         fn = {"whatsapp": self._send_whatsapp, "rcs": self._send_rcs, "sms": self._send_sms, "email": self._send_email}[msg.channel]
-        mid = fn(msg)
-        log.info("notify.sent", channel=msg.channel, to=msg.to, message_id=mid, correlation_id=msg.correlation_id or None,
-                 order_id=msg.order_id)
+        channel = msg.channel
+        if channel == "rcs":
+            sms = self._client("pinpoint-sms-voice-v2")
+            try:
+                mid = fn(msg)
+            except sms.exceptions.ConflictException as error:
+                # A testing agent rejects an unverified RCS destination before its
+                # provider-side fallback runs. SMS applies its own verification and
+                # opt-out checks; all other RCS rejections must propagate unchanged.
+                if error.response.get("Reason") != "DESTINATION_PHONE_NUMBER_NOT_VERIFIED":
+                    raise
+                channel = "sms"
+                log.info("notify.fallback", requested_channel="rcs", channel=channel,
+                         reason=error.response["Reason"], correlation_id=msg.correlation_id or None)
+                mid = self._send_sms(replace(msg, channel=channel, text=msg.fallback_text or msg.text))
+        else:
+            mid = fn(msg)
+        log.info("notify.sent", channel=channel, requested_channel=msg.channel, to=msg.to, message_id=mid,
+                 correlation_id=msg.correlation_id or None, order_id=msg.order_id)
         return mid
 
 

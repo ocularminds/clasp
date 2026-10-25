@@ -6,6 +6,7 @@ Tests import `seed()` and run it against moto-backed stores."""
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,19 +30,37 @@ ITEMS = [
 ]
 
 
-def parties() -> list[dict]:
+def parties(*, live: bool = False) -> list[dict]:
     from services.common.config import env
 
-    return [
-        {"party_id": "buyer_demo", "role": "buyer", "name": "Ada", "phone": env("DEMO_BUYER_PHONE", "+15550000001"),
+    def phone(key: str, local_default: str) -> str | None:
+        return env(key) if live else env(key, local_default)
+
+    people = [
+        {"party_id": "buyer_demo", "role": "buyer", "name": "Ada", "phone": phone("DEMO_BUYER_PHONE", "+15550000001"),
          "email": env("DEMO_BUYER_EMAIL", "buyer@example.com")},
-        {"party_id": "buyer_demo_2", "role": "buyer", "name": "Bo", "phone": env("DEMO_BUYER2_PHONE", "+15550000004"),
+        {"party_id": "buyer_demo_2", "role": "buyer", "name": "Bo", "phone": phone("DEMO_BUYER2_PHONE", "+15550000004"),
          "email": env("DEMO_BUYER2_EMAIL", "buyer2@example.com")},
         {"party_id": "seller_demo", "role": "seller", "name": "Bram's Camera Shop",
-         "phone": env("DEMO_SELLER_PHONE", "+15550000002"), "email": env("DEMO_SELLER_EMAIL", "seller@example.com")},
-        {"party_id": "supervisor_demo", "role": "supervisor", "name": "Supervisor", "phone": env("DEMO_SUPERVISOR_PHONE", "+15550000003"),
+         "phone": phone("DEMO_SELLER_PHONE", "+15550000002"), "email": env("DEMO_SELLER_EMAIL", "seller@example.com")},
+        {"party_id": "supervisor_demo", "role": "supervisor", "name": "Supervisor", "phone": phone("DEMO_SUPERVISOR_PHONE", "+15550000003"),
          "email": settings.supervisor_email},
     ]
+    if not live:
+        return people
+    # Optional second buyer is omitted; a supervisor can approve through email alone.
+    people = [p for p in people if p["party_id"] != "buyer_demo_2" or p["phone"]]
+    seen = set()
+    for person in people:
+        number = person["phone"]
+        if not number and person["role"] == "supervisor":
+            continue
+        if not number or not re.fullmatch(r"\+[1-9]\d{7,14}", number) or number.startswith("+1555000"):
+            raise ValueError(f"Set a real verified E.164 phone for {person['party_id']} before seeding Cognito.")
+        if number in seen:
+            raise ValueError("Each demo identity needs a distinct phone number.")
+        seen.add(number)
+    return people
 
 
 def _cognito_sub(cognito, pool_id: str, party: dict) -> str:
@@ -59,12 +78,16 @@ def _cognito_sub(cognito, pool_id: str, party: dict) -> str:
         if e.response["Error"]["Code"] != "UsernameExistsException":
             raise
         user_attrs = cognito.admin_get_user(UserPoolId=pool_id, Username=username)["UserAttributes"]
+        role = next((a["Value"] for a in user_attrs if a["Name"] == "custom:role"), None)
+        if role != party["role"]:
+            raise ValueError(f"Existing Cognito user for {party['party_id']} has a different role; do not reassign it silently.")
     return next(a["Value"] for a in user_attrs if a["Name"] == "sub")
 
 
 def seed(stores=None, cognito=None, pool_id: str | None = None) -> dict:
     stores = stores or get_stores()
     pool_id = pool_id or settings.cognito_user_pool_id
+    people = parties(live=bool(pool_id))  # Validate every identity before writing any data.
     if pool_id and cognito is None:
         from services.common.aws import client
 
@@ -73,9 +96,9 @@ def seed(stores=None, cognito=None, pool_id: str | None = None) -> dict:
         existing = stores.get_item(item["item_id"])
         stores.put_item({**item, "stock": existing["stock"] if existing else item["stock"]})
     subs = {}
-    for p in parties():
+    for p in people:
         existing = stores.get_party(p["party_id"])
-        if pool_id and cognito:
+        if pool_id and cognito and p["phone"]:
             sub = _cognito_sub(cognito, pool_id, p)
         else:
             sub = (existing or {}).get("sub") or f"sub-{p['party_id']}"

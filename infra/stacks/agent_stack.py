@@ -11,6 +11,7 @@ from aws_cdk import aws_bedrock as bedrock
 from aws_cdk import aws_bedrockagentcore as agentcore
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_kms as kms
 from aws_cdk import aws_secretsmanager as sm
 from constructs import Construct
 
@@ -134,6 +135,19 @@ class AgentStack(Stack):
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com",
                                             conditions={"StringEquals": {"aws:SourceAccount": self.account}}),
         )
+        log_key = kms.Key(self, "RuntimeLogKey", alias=f"alias/clasp/{stage()}/runtime-logs",
+                          enable_key_rotation=True, removal_policy=RemovalPolicy.DESTROY)
+        log_service = f"logs.{self.region}.amazonaws.com"
+        log_context = {"kms:EncryptionContext:aws:logs:arn":
+                       f"arn:{self.partition}:logs:{self.region}:{self.account}:log-group:/aws/bedrock-agentcore/runtimes/clasp_agent-*"}
+        log_key_actions = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"]
+        log_key.add_to_resource_policy(iam.PolicyStatement(
+            principals=[iam.ServicePrincipal(log_service)], actions=log_key_actions, resources=["*"],
+            conditions={"ArnLike": log_context}))
+        runtime_role.add_to_policy(iam.PolicyStatement(
+            actions=log_key_actions, resources=[log_key.key_arn],
+            conditions={"StringEquals": {"kms:ViaService": log_service}, "ArnLike": log_context}))
+        output(self, "AGENT_LOG_KMS_KEY_ARN", log_key.key_arn)
         runtime_role.add_to_policy(iam.PolicyStatement(actions=[
             "bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:ApplyGuardrail"], resources=["*"]))
         runtime_role.add_to_policy(iam.PolicyStatement(actions=["bedrock-agentcore:*Memory*", "bedrock-agentcore:*Event*",

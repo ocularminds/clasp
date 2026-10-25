@@ -1,2 +1,4 @@
-# Runtime dependencies bundled into every Lambda (kept tiny; boto3 is provided by the runtime).
-pyyaml>=6.0
+# Bundle the tested SDK: RCS and AgentCore operations can be newer than Lambda's SDK.
+boto3==1.43.118
+PyYAML==6.0.3
+requests==2.34.2
