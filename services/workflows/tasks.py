@@ -77,9 +77,8 @@ def notify_seller_funds_held(order_id: str, output: dict | None = None) -> dict:
         rich_card={"title": "Funds secured by provider", "description": f"{amount} held for {o.get('item_name')}. "
                    "Confirmed by the payment provider's webhook, not a screenshot. Upload a dispatch photo to continue.",
                    "media_url": item_image, "suggestions": [{"text": "Upload dispatch photo", "postback": f"dispatch:{order_id}"}]},
-        fallback_text=(f"Clasp: {amount} confirmed in the payment simulation for order {order_id}. "
-                       "Open your Clasp WhatsApp chat and send this order ID with a photo of the packed parcel "
-                       "to record dispatch."),
+        fallback_text=(f"Clasp: {amount} held in the payment simulation. Order {order_id[-6:]}. "
+                       "Send this code and a parcel photo in your Clasp WhatsApp chat to dispatch."),
     )
     events.emit("OrderHeld", o, seller_notified=bool(mid))
     return {"message_id": mid}
@@ -144,7 +143,14 @@ def mark_disputed(order_id: str, output: dict | None = None) -> dict:
                     text="The supervisor did not approve the full refund. Let's settle this within policy: I can still offer "
                          "the options from the compensation ladder.")
     else:
-        notify.send(channel="rcs", to=o["seller_phone"], order_id=order_id, correlation_id=o.get("correlation_id", ""),
+        photo_key = o.get("dispatch_photo_key") or ""
+        dispatch_age = clock.now() - int(o.get("dispatched_at") or 0)
+        # WhatsApp media is stored under inbound/<sender>/; RCS uses inbound/rcs/.
+        # Leave an hour of margin inside the 24-hour customer-service window.
+        recent_whatsapp = (photo_key.startswith("inbound/") and not photo_key.startswith("inbound/rcs/")
+                           and 0 <= dispatch_age < 23 * 3600)
+        notify.send(channel="whatsapp" if recent_whatsapp else "rcs", to=o["seller_phone"],
+                    order_id=order_id, correlation_id=o.get("correlation_id", ""),
                     text=f"Order {order_id[-6:]}: the buyer reported a problem. Clasp has called a Truce; the payout stays "
                          "held while evidence is collected. No action needed from you yet.")
     events.emit("TruceOpened", o, reopened=bool(output.get("after_rejection")))
