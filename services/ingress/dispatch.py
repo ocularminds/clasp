@@ -41,7 +41,7 @@ def fetch_whatsapp_media(inbound: Inbound) -> list[str]:
             # S3File.key is a prefix; a presigned PUT preserves the exact key the agent reads.
             client("socialmessaging").get_whatsapp_message_media(
                 mediaId=m["id"], originationPhoneNumberId=pn,
-                destinationS3PresignedUrl=media.copy_from_presigned_target(key),
+                destinationS3PresignedUrl=media.copy_from_presigned_target(key, m.get("mime") or "application/octet-stream"),
             )
         else:
             media.put(key, b"", m.get("mime") or "application/octet-stream")  # local placeholder

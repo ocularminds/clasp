@@ -41,13 +41,14 @@ def test_whatsapp_reply_preserves_e164_and_uses_the_sdk_send_operation(social):
         stub.assert_no_pending_responses()
 
 
-def test_whatsapp_photo_download_targets_the_exact_returned_s3_key(social, monkeypatch):
+@pytest.mark.parametrize("mime,expected_content_type", [("image/jpeg", "image/jpeg"), (None, "application/octet-stream")])
+def test_whatsapp_photo_download_targets_the_exact_returned_s3_key(social, monkeypatch, mime, expected_content_type):
     monkeypatch.setenv("MEDIA_BUCKET", "clasp-test-media")
     media = S3Media("clasp-test-media", s3=boto3.client("s3", region_name="us-east-1"))
     monkeypatch.setattr(aws_clients, "client", lambda name: social)
     monkeypatch.setattr(dispatch, "get_media", lambda: media)
     inbound = Inbound(channel="whatsapp", sender="+15551234567", to=None, text="Dispatch photo",
-                      media=[{"id": "123456789", "mime": "image/jpeg", "kind": "image"}])
+                      media=[{"id": "123456789", "mime": mime, "kind": "image"}])
     captured = {}
     download = social.get_whatsapp_message_media
 
@@ -59,7 +60,7 @@ def test_whatsapp_photo_download_targets_the_exact_returned_s3_key(social, monke
     with Stubber(social) as stub:
         stub.add_response("get_whatsapp_message_media", {"mimeType": "image/jpeg", "fileSize": 1024}, {
             "mediaId": "123456789", "originationPhoneNumberId": PHONE_ID,
-            "destinationS3PresignedUrl": {"url": ANY, "headers": {}},
+            "destinationS3PresignedUrl": {"url": ANY, "headers": {"Content-Type": expected_content_type}},
         })
         keys = dispatch.fetch_whatsapp_media(inbound)
         stub.assert_no_pending_responses()
