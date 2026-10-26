@@ -131,3 +131,19 @@ def test_rcs_media_upload_role_is_limited_to_its_prefix(templates):
     trust = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
     assert trust["Principal"]["Service"] == "sms-voice.amazonaws.com"
     assert trust["Condition"]["StringEquals"]["aws:SourceAccount"] == "123456789012"
+
+
+def test_load_env_honours_skip_flag(tmp_path, monkeypatch):
+    """A developer's .env must never reach the test process through the CDK helper (it did: real demo phones
+    leaked into later e2e tests once the synth test had run)."""
+    import infra.common as common
+
+    (tmp_path / ".env").write_text("CLASP_LEAK_PROBE=leaked\n")
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    monkeypatch.delenv("CLASP_LEAK_PROBE", raising=False)
+    monkeypatch.setenv("CLASP_SKIP_DOTENV", "1")
+    common.load_env()
+    assert "CLASP_LEAK_PROBE" not in os.environ
+    monkeypatch.delenv("CLASP_SKIP_DOTENV")
+    common.load_env()
+    assert os.environ["CLASP_LEAK_PROBE"] == "leaked"
