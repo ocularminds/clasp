@@ -17,7 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_env() -> None:
-    """Read .env so human-provided IDs (WhatsApp phone number id, pool id, SES sender) reach the templates."""
+    """Read .env so human-provided IDs (WhatsApp phone number id, pool id, SES sender) reach the templates.
+    Honours CLASP_SKIP_DOTENV like services.common.config does, so the test suite never inherits a developer's .env."""
+    if os.environ.get("CLASP_SKIP_DOTENV"):
+        return
     p = ROOT / ".env"
     if not p.exists():
         return
