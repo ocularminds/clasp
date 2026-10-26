@@ -7,7 +7,7 @@ export JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1
 -include .env
 export
 
-.PHONY: help venv deps test lint synth diff bootstrap deploy destroy seed simulate logs decisions agent-deploy agent-local api-local clean
+.PHONY: help venv deps test lint synth diff bootstrap deploy destroy seed kb-sync simulate logs decisions agent-deploy agent-local api-local clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -56,6 +56,9 @@ api-local:       ## Run the local HTTP shim (hosted checkout, webhook, approvals
 
 seed:            ## Seed items, parties and Cognito users
 	$(PY) demo/seed.py
+
+kb-sync:         ## Render the policy document, upload it with the FAQ to the Knowledge Base bucket, run an ingestion job
+	$(PY) demo/kb_sync.py $(ARGS)
 
 simulate:        ## Drive a full order (buy → hold → deliver → Truce → escalate) with no phones
 	$(PY) demo/simulate.py $(ARGS)

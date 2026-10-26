@@ -88,6 +88,38 @@ For the Anthropic model in `BEDROCK_MODEL_ID`, complete the Bedrock first-use fo
 access with a small Converse request. The default is the US inference profile
 `us.anthropic.claude-sonnet-4-5-20250929-v1:0`; use the same model for evidence in this demo.
 
+### Leaving the SES and SMS sandboxes (needed before judges' phones and mailboxes work)
+
+While SES is in its sandbox only verified identities receive mail, and while the SMS account is in its
+sandbox only verified destination numbers receive texts. The demo mailbox and the two demo phones are
+verified; a judge's are not. Request production access for both as early as possible (approval is
+typically within one business day) and keep verifying individual numbers until it lands.
+
+SES production access is one API call:
+
+```bash
+aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIONAL \
+  --website-url "https://binariesfort.com" --contact-language EN \
+  --additional-contact-email-addresses "$SES_FROM_EMAIL" \
+  --use-case-description "Clasp, a conversational-commerce demo for the AWS CDS Agentic AI Hackathon, sends order receipts, dispute evidence packs and supervisor approval links to the buyer, seller and supervisor of each order. Every recipient is a participant in an order they initiated; volume under 200 messages a day during judging; no marketing mail."
+aws sesv2 get-account --query '{production:ProductionAccessEnabled,status:EnforcementStatus}'
+```
+
+SMS production access is a Support request: End User Messaging SMS console → **Overview** → the sandbox
+notice → **Request production access** (opens a Support Center case pre-filled for SMS). State the use case
+(one-time delivery codes and order alerts to order participants, Sweden, transactional, opt-in by placing an
+order), the expected volume (under 100 a day) and the sender (`CLASP` sender ID, long code pending). Until it is
+granted, verify each judge number instead:
+
+```bash
+aws pinpoint-sms-voice-v2 create-verified-destination-number --destination-phone-number "+46XXXXXXXXX"
+aws pinpoint-sms-voice-v2 send-destination-number-verification-code --verified-destination-number-id <id> --verification-channel TEXT
+aws pinpoint-sms-voice-v2 verify-destination-number --verified-destination-number-id <id> --verification-code <code from the handset>
+```
+
+Judges reach the agent on WhatsApp without any of this once `AUTO_ENROL_CHANNELS=whatsapp` is deployed; the
+sandboxes only gate the SMS delivery code and the email receipts for numbers and mailboxes we have not verified.
+
 ## 2. Deploy, bind topics, and seed
 
 ```bash
@@ -146,6 +178,7 @@ aws pinpoint-sms-voice-v2 associate-origination-identity \
 uv pip install --python .venv/bin/python bedrock-agentcore-starter-toolkit
 make agent-deploy
 make seed
+make kb-sync                     # policy documents into the Knowledge Base; waits for the ingestion job
 ```
 
 The deployment wrapper packages the complete `services/` tree, reads the runtime ARN from
@@ -248,6 +281,25 @@ Text events use the RCS agent ID as `destinationNumber`; taps have JSON `message
 `postbackData`; photos have `mediaStatus=SUCCESS`, `s3Bucket`, and `s3Key`. The photo should
 arrive under `inbound/rcs/` in the configured bucket. Ingress logs field/type shape without
 logging raw media URLs; use that shape to diagnose the first actual event before proceeding.
+
+### Getting the fourth channel (RCS) onto a real handset
+
+RCS cannot be fixed in code: the two available iPhones (Tre, Lyca) expose no RCS setting, so both test
+destinations stay `UNSUPPORTED` and the router's SMS fallback is what ships. To record the RCS beat for real:
+
+1. Use an **Android phone with Google Messages as the default SMS app** on a carrier where
+   *Settings → RCS chats* shows **Connected** (that is the carrier having launched RCS Business Messaging;
+   verify on the handset rather than trusting a carrier list).
+2. Register it as a test destination for the RCS agent and accept the tester invitation that Google Messages
+   shows: `aws pinpoint-sms-voice-v2 create-verified-destination-number --destination-phone-number "+46…" --rcs-agent-id "$RCS_AGENT_ID"`,
+   then the verification call above. The destination must read `VERIFIED` **for that agent**; SMS sandbox
+   verification is a different list.
+3. Put that number in `.env` as `DEMO_SELLER_PHONE`, run `make seed`, and send one order through. The funds-held
+   rich card should render with the **Upload dispatch photo** suggestion; tapping it posts
+   `dispatch:<order_id>` and the photo lands under `inbound/rcs/` in the media bucket. Watch
+   `ingress.record` then `agent.turn.in` with `channel=rcs` in the ingress logs.
+4. Only then change the narration line about RCS. Until a `channel=rcs` turn has been observed, the honest
+   wording stays: "RCS is configured and falls back to SMS; handset delivery is untested."
 
 ## 4. Three-minute recording script
 

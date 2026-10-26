@@ -31,7 +31,17 @@ flowchart LR
   Notify --> SMS[SMS delivery code]
   Notify --> SES[SES receipts / approvals / evidence]
   S3 --> Tools
+  Tools -->|explain_policy: Retrieve| KB[Bedrock Knowledge Base: compensation policy on S3 Vectors]
+  PolicyDocs[S3 policy documents, rendered from policy.yaml] --> KB
+  Notify -->|order lifecycle events| Bus[EventBridge bus clasp-dev]
+  Tools --> Bus
+  Bus --> EventLog[CloudWatch Logs audit trail + 7-day archive]
+  Bus -->|dispatch / code / release| DeliveryTopic[SNS delivery events: courier integration point]
 ```
+
+The Knowledge Base holds the plain-language policy the agent quotes from (`explain_policy`); it is generated from the
+same `policy.yaml` that AgentSafe enforces, so the words cannot drift from the numbers. Lifecycle events are
+observability and integration hooks, published by the workflow task bodies; they are never on the money path.
 
 The mock PSP records simulated holds and payouts. Actor binding, deterministic policy checks,
 signed authorizations and the executor enforce the demo's money boundary. The model's evidence
