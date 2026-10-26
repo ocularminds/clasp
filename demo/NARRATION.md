@@ -6,8 +6,9 @@ guides, not words to read aloud. Keep the final video under three minutes, inclu
 three-second typewritten Clasp opening and five-second Clasp closing. Use real phone,
 email and console captures through the body, with a small square narrator at bottom-left.
 
-This is a script for the planned live recording. Match each claim to the captured result;
-the WhatsApp workflow still needs to run successfully before the video can be submitted.
+This script follows the completed partial-refund take for order `27e389`. Match each spoken
+claim to the actual phone, email or console evidence. Payments are simulated. The selected
+take did not include an above-cap denial, supervisor approval or received buyer delivery SMS.
 
 ## 0:00–0:20 — Introduce the problem
 
@@ -15,7 +16,7 @@ Buying something through chat is easy. Trusting what happens next is the hard pa
 
 Clasp helps a buyer and seller complete a purchase, and work things out if something goes wrong.
 
-Today we're using WhatsApp, SMS and email. RCS is configured, but handset delivery is still untested.
+We're using WhatsApp, SMS and email. RCS is configured, but both available iPhones are unsupported.
 
 ## 0:20–0:50 — Buy and confirm the hold
 
@@ -30,45 +31,36 @@ service sends a signed confirmation.
 
 ## 0:50–1:10 — Seller dispatch
 
-Now the seller gets an SMS alert. They open WhatsApp and send the order number with a photo
-of the packed recorder.
+Now the seller gets an SMS alert. The seller sends the order number with a photo of the
+recorder in WhatsApp.
 
-Clasp records the dispatch, and sends the buyer a delivery code by SMS.
+Clasp records the dispatch. AWS accepts the delivery-code SMS, but it does not arrive on
+the buyer's phone in this take.
 
 ## 1:10–1:25 — Something goes wrong
 
-Entering that code would release the payout, but the recorder's battery cover has arrived
-damaged. So I leave the code unused and report the damage.
-
-Clasp calls a Truce.
+I report a damaged battery cover, and Clasp opens a Truce while the payout stays on hold.
 
 ## 1:25–2:05 — Evidence and the policy boundary
 
-The payout stays on hold.
-
-Clasp asks for a fresh photo with a one-time code beside the recorder. The model checks the photo.
+Clasp asks for a fresh photo with a one-time code beside the recorder. The model matches the
+code and item, but does not confirm damage.
 A separate policy service, AgentSafe, decides what can happen.
 
-Then I ask for a thousand-dollar refund.
+I choose the twenty percent partial refund: twenty-one dollars and sixty cents.
 
-*[Pause on the response.]*
+AgentSafe checks my identity, the order state, the evidence, the held amount and the refund limits.
 
-Asking doesn't give the agent permission to pay it. The proposal still has to pass the policy checks.
+*[Pause on the actual `allow` decision and amount.]*
 
-Instead, I ask for the full amount I paid. That's above the automatic refund limit, so it needs a supervisor.
+## 2:05–2:35 — Authorized refund
 
-## 2:05–2:40 — Supervisor approval
+It returns allow. The executor verifies the signed authorization before adding one simulated
+refund to the ledger.
 
-Over here, the supervisor gets an email with the amount, the reason, and the evidence.
+The buyer and seller receive their evidence packs by email.
 
-They approve this specific refund using a signed link.
-
-*[Pause on the approval result.]*
-
-Only then can the executor record the refund. The buyer and seller receive an evidence pack
-showing the decision and what happened.
-
-It's one order, one approved refund, and a record both sides can check.
+It's one order, one authorized refund, and a record both sides can check.
 
 ## 2:40–3:00 — Show the evidence
 
@@ -80,11 +72,17 @@ Clasp: nothing moves until both sides are kept whole.
 
 ---
 
-If the live log shows an actual AgentSafe denial for the $1,000 proposal, the boundary line can be:
-“AgentSafe refuses it, and the ledger hasn't changed.” If the model declines before calling the
-tool, keep the main script's wording; do not present that as a policy-service decision.
+The saved photo verdict is `code_visible: true`, `code_matches: true`,
+`same_item_as_dispatch: true`, `damage_observed: false`, confidence `0.95`. The damage is the
+buyer's report, not a verified model finding. The refund decision is `allow`, reason
+`in_policy`, amount `2160` in USD minor units. The completed ledger contains `DISCOUNT`,
+`HOLD` and exactly one `REFUND`; there is no release entry. Show the real decision and ledger.
 
-The supplied narration has already been cropped and cleaned. Record the four item-specific
-replacement lines with the same framing and sound, then match their timing to the real
-workflow captures. Keep the original recording and its earlier edit intact. The older
-`demo/compose_demo.py` layout does not include these bookends or the narrator inset.
+The seller confirmed SMS receipt, but its footage still needs a coverage check. AWS acceptance
+of the buyer's delivery-code SMS is not proof of delivery. Both SES evidence emails arrived in
+Spam. Use the received emails and attachment; do not substitute a supervisor approval email.
+
+The supplied narration has already been cropped and cleaned. Record the eight replacement
+passages in the local pickup sheet with the same framing and sound, then match their timing
+to the real workflow captures. Keep the original recording and its earlier edit intact.
+The older `demo/compose_demo.py` layout does not include these bookends or the narrator inset.
