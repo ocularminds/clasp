@@ -19,8 +19,9 @@ Both parties can receive an SES receipt and evidence pack. A model proposal alon
 - **Channels:** AWS End User Messaging Social for WhatsApp, AWS End User Messaging for RCS and SMS, and Amazon SES for email. Amazon SNS delivers inbound messaging events to Lambda.
 - **Agent:** Strands and Claude Sonnet 4.5 on Amazon Bedrock AgentCore Runtime, with AgentCore Gateway for tools and Memory for conversation history. Cognito and the party registry bind phone numbers to actors.
 - **Authorization:** The repository's AgentSafe reference service evaluates a versioned YAML policy and signs decisions with an asymmetric AWS KMS key. Bedrock Guardrails provide an additional text filter.
+- **Policy knowledge and events:** A Bedrock Knowledge Base (Titan embeddings on S3 Vectors) holds the compensation and dispute policy, rendered from the same YAML that AgentSafe enforces, so the agent quotes rules it cannot bend. Every order lifecycle step publishes to an EventBridge bus that is archived, written to a CloudWatch audit log, and fans delivery events out to SNS for courier integrations.
 - **Workflow and storage:** Step Functions coordinates the order. Separate Lambda functions evaluate policy and execute authorized actions. DynamoDB stores orders, decisions and the append-only payout ledger; S3 stores evidence. CloudWatch records diagnostic events.
-- **Deployment:** Five Python CDK stacks and an AgentCore container deployment. The repository includes setup instructions, deterministic architecture exports and the recording script.
+- **Deployment:** Seven Python CDK stacks and an AgentCore container deployment. The repository includes setup instructions, deterministic architecture exports and the recording script.
 
 ## Accomplishments and validation
 

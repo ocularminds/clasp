@@ -9,7 +9,7 @@ import hmac
 import json
 from typing import Any
 
-from ..common import clock
+from ..common import clock, events
 from ..common.config import settings
 from ..common.ids import new_code, new_id
 from ..common.log import Log
@@ -56,6 +56,8 @@ def register_token(order_id: str, phase: str, token: str, correlation_id: str = 
         updates = {"tokens": {phase: token}, **{k: v for k, v in updates.items() if not k.startswith("tokens.")}}
     out = stores.update_order(order_id, updates)
     log.info("workflow.wait", order_id=order_id, phase=phase, status=out.get("status"), correlation_id=correlation_id or None)
+    if phase == "payment":
+        events.emit("OrderCreated", out)
     return {"order_id": order_id, "phase": phase}
 
 
@@ -79,6 +81,7 @@ def notify_seller_funds_held(order_id: str, output: dict | None = None) -> dict:
                        "Open your Clasp WhatsApp chat and send this order ID with a photo of the packed parcel "
                        "to record dispatch."),
     )
+    events.emit("OrderHeld", o, seller_notified=bool(mid))
     return {"message_id": mid}
 
 
@@ -92,6 +95,7 @@ def mark_dispatched(order_id: str, output: dict | None = None) -> dict:
                 text=f"Your '{o.get('item_name')}' has been dispatched. Here is the seller's dispatch photo. "
                      "A one-time delivery code is on its way by SMS; share it with me only when the item is in your hands.",
                 media_url=photo_url)
+    events.emit("OrderDispatched", o, has_dispatch_photo=bool(o.get("dispatch_photo_key")))
     return {"status": "DISPATCHED"}
 
 
@@ -107,6 +111,7 @@ def send_delivery_code(order_id: str, output: dict | None = None) -> dict:
                      "only once the item is in your hands. It releases the seller's payout.")
     log.info("delivery_code.sent", order_id=order_id, challenge_id=challenge["challenge_id"],
              correlation_id=o.get("correlation_id") or None)
+    events.emit("DeliveryCodeSent", o, challenge_id=challenge["challenge_id"], expires_at=challenge["expires_at"])
     return {"challenge_id": challenge["challenge_id"]}
 
 
@@ -124,6 +129,7 @@ def send_receipts(order_id: str, output: dict | None = None) -> dict:
         if email:
             ids.append(notify.send(channel="email", to=email, subject=f"Clasp receipt · order {order_id[-6:]}", text=text,
                                    order_id=order_id, correlation_id=o.get("correlation_id", "")))
+    events.emit("OrderReleased", o, released_minor=o.get("released_minor"), receipts=len(ids))
     return {"message_ids": ids}
 
 
@@ -141,6 +147,7 @@ def mark_disputed(order_id: str, output: dict | None = None) -> dict:
         notify.send(channel="rcs", to=o["seller_phone"], order_id=order_id, correlation_id=o.get("correlation_id", ""),
                     text=f"Order {order_id[-6:]}: the buyer reported a problem. Clasp has called a Truce; the payout stays "
                          "held while evidence is collected. No action needed from you yet.")
+    events.emit("TruceOpened", o, reopened=bool(output.get("after_rejection")))
     return {"status": "DISPUTED"}
 
 
@@ -153,6 +160,7 @@ def mark_escalated(order_id: str, output: dict | None = None) -> dict:
     notify.send(channel="whatsapp", to=o["buyer_phone"], order_id=order_id, correlation_id=o.get("correlation_id", ""),
                 text=f"A refund of {fmt(int(output.get('amount_minor', 0)), output.get('currency', 'USD'))} is above what I can "
                      "approve on my own. A supervisor has been asked to review it; I'll let you know here.")
+    events.emit("OrderEscalated", o, requested_minor=output.get("amount_minor"), decision_id=output.get("decision_id"))
     return {"status": "ESCALATED"}
 
 
@@ -208,6 +216,8 @@ def send_evidence_pack(order_id: str, output: dict | None = None) -> dict:
                                    text=text, order_id=order_id, correlation_id=o.get("correlation_id", ""),
                                    attachments=[{"filename": f"evidence-{order_id}.json", "content_type": "application/json",
                                                  "data": body.encode()}]))
+    events.emit("OrderResolved", o, outcome=outcome, refunded_minor=o.get("refunded_minor"), credited_minor=o.get("credited_minor"),
+                decisions=len(decisions), evidence_packs=len(ids))
     return {"message_ids": ids}
 
 

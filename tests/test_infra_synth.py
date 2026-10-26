@@ -147,3 +147,47 @@ def test_load_env_honours_skip_flag(tmp_path, monkeypatch):
     monkeypatch.delenv("CLASP_SKIP_DOTENV")
     common.load_env()
     assert os.environ["CLASP_LEAK_PROBE"] == "leaked"
+
+
+def test_knowledge_stack_holds_the_policy_on_s3_vectors(templates):
+    k = templates["knowledge"]
+    k.resource_count_is("AWS::Bedrock::KnowledgeBase", 1)
+    k.resource_count_is("AWS::Bedrock::DataSource", 1)
+    k.resource_count_is("AWS::S3Vectors::VectorBucket", 1)
+    k.resource_count_is("AWS::S3Vectors::Index", 1)
+    kb = next(iter(k.find_resources("AWS::Bedrock::KnowledgeBase").values()))["Properties"]
+    assert kb["StorageConfiguration"]["Type"] == "S3_VECTORS"
+    assert kb["KnowledgeBaseConfiguration"]["VectorKnowledgeBaseConfiguration"]["EmbeddingModelConfiguration"]["BedrockEmbeddingModelConfiguration"]["Dimensions"] == 1024
+    index = next(iter(k.find_resources("AWS::S3Vectors::Index").values()))["Properties"]
+    assert index["Dimension"] == 1024 and index["DistanceMetric"] == "cosine"
+    assert set(index["MetadataConfiguration"]["NonFilterableMetadataKeys"]) == {"AMAZON_BEDROCK_TEXT", "AMAZON_BEDROCK_METADATA"}
+    ds = next(iter(k.find_resources("AWS::Bedrock::DataSource").values()))["Properties"]
+    assert ds["DataSourceConfiguration"]["S3Configuration"]["InclusionPrefixes"] == ["policy/"]
+    assert ds["VectorIngestionConfiguration"]["ChunkingConfiguration"]["ChunkingStrategy"] == "FIXED_SIZE"
+    params = {p["Properties"]["Name"] for p in k.find_resources("AWS::SSM::Parameter").values()}
+    assert "/clasp/test/knowledge_base_id" in params
+
+
+def test_events_stack_routes_lifecycle_events(templates):
+    e = templates["events"]
+    e.has_resource_properties("AWS::Events::EventBus", {"Name": "clasp-test"})
+    e.resource_count_is("AWS::Events::Archive", 1)
+    e.resource_count_is("AWS::Events::Rule", 2)
+    e.has_resource_properties("AWS::Logs::LogGroup", {"LogGroupName": "/clasp/test/events"})
+    e.resource_count_is("AWS::SNS::Topic", 1)
+    rules = [r["Properties"] for r in e.find_resources("AWS::Events::Rule").values()]
+    delivery = next(r for r in rules if "detail-type" in r["EventPattern"])
+    from services.common.events import DELIVERY_EVENT_TYPES
+
+    assert set(delivery["EventPattern"]["detail-type"]) == set(DELIVERY_EVENT_TYPES)
+    assert all(r["EventPattern"]["source"] == ["clasp.order"] for r in rules)
+
+
+def test_publishers_and_retrievers_are_the_right_roles(templates):
+    wf = templates["workflow"]
+    for role in ("WorkflowTasksServiceRole", "ToolsServiceRole"):
+        assert _allows(_policies_for_role(wf, role), "events:PutEvents", "clasp-test"), f"{role} cannot publish events"
+    for role in ("ExecutorServiceRole", "AgentSafeServiceRole"):
+        assert not _allows(_policies_for_role(wf, role), "events:PutEvents", ""), f"{role} should not publish events"
+    assert _allows(_policies_for_role(wf, "ToolsServiceRole"), "bedrock:Retrieve", "knowledge-base")
+    assert not _allows(_policies_for_role(wf, "ExecutorServiceRole"), "bedrock:Retrieve", "")

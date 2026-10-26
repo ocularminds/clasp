@@ -23,6 +23,7 @@ from ..notify import router as notify
 from ..workflows import tasks
 from ..workflows.client import get_driver
 from . import evidence as evidence_mod
+from .knowledge import explain_policy
 from .money import propose
 
 log = Log("tools")
@@ -354,7 +355,7 @@ TOOLS = {
     "confirm_delivery": confirm_delivery, "report_problem": report_problem, "issue_challenge": issue_challenge,
     "verify_evidence": verify_evidence, "get_truce_options": get_truce_options, "propose_refund": propose_refund,
     "propose_credit": propose_credit, "propose_replacement": propose_replacement, "offer_options": offer_options,
-    "notify_party": notify_party,
+    "notify_party": notify_party, "explain_policy": explain_policy,
 }
 
 

@@ -38,10 +38,11 @@ cp .env.example .env               # fill in the TODO(human) values
 make deps                          # use the Node version in .node-version
 make bootstrap                     # once per account/region
 make diff                          # review before deploying
-make deploy                        # five stacks; outputs are merged into .env
+make deploy                        # seven stacks; outputs are merged into .env
 # Bind the channel topics and configure RCS media using demo/RUNBOOK.md.
 make agent-deploy                  # AgentCore Runtime via the starter toolkit; writes AGENT_RUNTIME_ARN
 make seed                          # items, parties, Cognito users
+make kb-sync                       # policy documents into the Knowledge Base (runs the ingestion job)
 ```
 
 The runbook includes both SNS topic bindings and the RCS agent's separate inbound-media settings.
@@ -53,6 +54,8 @@ The runbook includes both SNS topic bindings and the RCS agent's separate inboun
 | `ClaspDevApi` | HTTP API: `GET/POST /pay/{checkout_id}`, `POST /webhooks/psp`, `GET /approvals` |
 | `ClaspDevMessaging` | Inbound SNS topics for WhatsApp and SMS/RCS, ingress Lambda, upload-only RCS media role; SES identities are verified separately |
 | `ClaspDevAgent` | Bedrock Guardrail (PII masking), AgentCore Memory, AgentCore Gateway + Lambda tools target (Cognito JWT), runtime execution role and log encryption key |
+| `ClaspDevKnowledge` | Bedrock Knowledge Base on S3 Vectors (Titan embeddings) holding the compensation policy rendered from `policy.yaml` plus the Truce FAQ; `make kb-sync` ingests; the agent quotes it through `explain_policy` |
+| `ClaspDevEvents` | EventBridge bus `clasp-dev` for order lifecycle events, 7-day archive, CloudWatch Logs audit rule, SNS fan-out of delivery events for courier integrations |
 
 IAM carries the invariant into the cloud: only the executor role may `PutItem` on the ledger (nobody may delete),
 only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches, can only invoke those two.

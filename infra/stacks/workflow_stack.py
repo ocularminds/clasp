@@ -49,6 +49,12 @@ class WorkflowStack(Stack):
                     "GUARDRAIL_ID": env("GUARDRAIL_ID"), "GUARDRAIL_VERSION": env("GUARDRAIL_VERSION")}
         ssm_read = iam.PolicyStatement(actions=["ssm:GetParameter"],
                                        resources=[self.format_arn(service="ssm", resource="parameter", resource_name=f"clasp/{stage()}/*")])
+        # Lifecycle events go to the Events stack's bus, addressed by name (no cross-stack reference needed).
+        put_events = iam.PolicyStatement(actions=["events:PutEvents"],
+                                         resources=[self.format_arn(service="events", resource="event-bus", resource_name=f"clasp-{stage()}")])
+        # explain_policy retrieves from the Knowledge stack's Bedrock Knowledge Base (id read from SSM).
+        kb_retrieve = iam.PolicyStatement(actions=["bedrock:Retrieve"],
+                                          resources=[self.format_arn(service="bedrock", resource="knowledge-base", resource_name="*")])
 
         # --- AgentSafe (reference policy service) -------------------------------------------
         self.agentsafe = make_function(self, "AgentSafe", "agentsafe.handler", base_env, timeout=20,
@@ -83,6 +89,7 @@ class WorkflowStack(Stack):
                                                                  resources=[data.tables[t].table_arn]))
         self.tasks_fn.add_to_role_policy(iam.PolicyStatement(actions=MESSAGING_ACTIONS, resources=["*"]))
         self.tasks_fn.add_to_role_policy(ssm_read)
+        self.tasks_fn.add_to_role_policy(put_events)
         data.media.grant_read(self.tasks_fn)
         self.agentsafe.grant_invoke(self.tasks_fn)
 
@@ -164,6 +171,8 @@ class WorkflowStack(Stack):
         self.tools.add_to_role_policy(iam.PolicyStatement(actions=MESSAGING_ACTIONS, resources=["*"]))
         self.tools.add_to_role_policy(iam.PolicyStatement(actions=["bedrock:InvokeModel", "bedrock:ApplyGuardrail"], resources=["*"]))
         self.tools.add_to_role_policy(ssm_read)
+        self.tools.add_to_role_policy(put_events)
+        self.tools.add_to_role_policy(kb_retrieve)
         data.media.grant_read_write(self.tools)
         self.agentsafe.grant_invoke(self.tools)
         self.executor.grant_invoke(self.tools)

@@ -54,4 +54,8 @@ TOOL_SCHEMAS: list[dict] = [
     {"name": "notify_party", "description": "Send a short message to the buyer (WhatsApp) or seller (RCS, SMS fallback) of an order.",
      "inputSchema": _schema({"order_id": {"type": "string"}, "party": {"type": "string", "enum": ["buyer", "seller"]},
                              "text": {"type": "string"}}, ["order_id", "party", "text"])},
+    {"name": "explain_policy", "description": "Look up the marketplace's compensation and dispute policy (Bedrock Knowledge Base) to "
+                                              "explain a rule, a limit, what evidence is needed, or why a decision was denied or escalated. "
+                                              "Returns passages to quote; changes nothing.",
+     "inputSchema": _schema({"question": {"type": "string", "description": "The person's question, in their words"}}, ["question"])},
 ]

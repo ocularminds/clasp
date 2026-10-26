@@ -81,4 +81,6 @@ COMMON_ENV = {
     "META_API_VERSION": env("META_API_VERSION", "v20.0"),
     "LOG_LEVEL": env("LOG_LEVEL", "INFO"),
     "STAGE": stage(),
+    "EVENTS_MODE": env("EVENTS_MODE_DEPLOYED", "eventbridge"),
+    "EVENT_BUS_NAME": f"clasp-{stage()}",
 }

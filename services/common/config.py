@@ -47,14 +47,23 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-@lru_cache(maxsize=16)
+_ssm_hits: dict[str, str] = {}
+
+
 def _ssm_cached(name: str) -> str | None:
+    """Hits are cached for the process lifetime; misses are retried, so a parameter published by a later
+    stack deploy is picked up without waiting for a cold start."""
+    if name in _ssm_hits:
+        return _ssm_hits[name]
     try:
         from .aws import client
 
-        return client("ssm").get_parameter(Name=name)["Parameter"]["Value"]
+        value = client("ssm").get_parameter(Name=name)["Parameter"]["Value"]
     except Exception:  # noqa: BLE001 — missing parameter or no credentials: fall back to defaults
         return None
+    if value:
+        _ssm_hits[name] = value
+    return value or None
 
 
 def _ssm(key: str) -> str | None:
@@ -130,6 +139,20 @@ class Settings:
     @property
     def notify_mode(self) -> str:
         return env("NOTIFY_MODE", "console") or "console"
+
+    # --- events + knowledge --------------------------------------------------------
+    @property
+    def events_mode(self) -> str:
+        """eventbridge | console | memory | off"""
+        return env("EVENTS_MODE", "console") or "console"
+
+    @property
+    def event_bus_name(self) -> str:
+        return env("EVENT_BUS_NAME", f"clasp-{self.stage}") or f"clasp-{self.stage}"
+
+    @property
+    def knowledge_base_id(self) -> str | None:
+        return env("KNOWLEDGE_BASE_ID") or _ssm("knowledge_base_id")
 
     @property
     def auto_enrol_channels(self) -> frozenset[str]:
