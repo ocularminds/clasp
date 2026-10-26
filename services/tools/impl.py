@@ -41,13 +41,46 @@ class ToolError(Exception):
     pass
 
 
-def _order_for(order_id: str, actor_sub: str, allow_seller: bool = False) -> dict:
-    o = get_stores().get_order(order_id)
-    if not o:
-        raise ToolError(f"order {order_id} not found")
-    if o.get("buyer_sub") != actor_sub and not (allow_seller and o.get("seller_sub") == actor_sub):
-        raise ToolError("this order does not belong to you")
-    return o
+def _actor_orders(stores, actor_sub: str, allow_seller: bool, seller_only: bool = False) -> list[dict]:
+    rows: dict[str, dict] = {}
+    if not seller_only:
+        rows.update({o["order_id"]: o for o in stores.orders_for_buyer(actor_sub)})
+    if allow_seller:
+        for o in stores.orders_for_seller(actor_sub):
+            rows.setdefault(o["order_id"], o)
+    return sorted(rows.values(), key=lambda o: str(o.get("created_at", "")), reverse=True)
+
+
+def _order_for(order_ref: str | None, actor_sub: str, allow_seller: bool = False, *,
+               single_status: str | None = None, seller_only: bool = False) -> dict:
+    """Resolve an order the actor may act on. Accepts the full order ID or the short code shown in alerts
+    (the last 6 characters). With no reference and `single_status`, picks the actor's only order in that status.
+    Short codes are matched only against the actor's own orders, so they never widen what anyone can reach."""
+    stores = get_stores()
+    ref = (order_ref or "").strip()
+    if ref:
+        o = stores.get_order(ref)
+        if o:
+            if o.get("buyer_sub") != actor_sub and not (allow_seller and o.get("seller_sub") == actor_sub):
+                raise ToolError("this order does not belong to you")
+            return o
+        code = ref.lower().removeprefix("ord_").strip(" .…#")
+        if len(code) < 4:
+            raise ToolError(f"order {ref} not found")
+        matches = [o for o in _actor_orders(stores, actor_sub, allow_seller, seller_only) if o["order_id"].lower().endswith(code)]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise ToolError(f"'{ref}' matches {len(matches)} of your orders; please give the full order ID")
+        raise ToolError(f"order {ref} not found")
+    if single_status:
+        candidates = [o for o in _actor_orders(stores, actor_sub, allow_seller, seller_only) if o.get("status") == single_status]
+        if len(candidates) == 1:
+            return candidates[0]
+        if not candidates:
+            raise ToolError(f"you have no order in status {single_status}")
+        raise ToolError(f"you have {len(candidates)} orders in status {single_status}; give the order code from your alert")
+    raise ToolError("order_id is required")
 
 
 def _summary(o: dict) -> dict:
@@ -56,7 +89,7 @@ def _summary(o: dict) -> dict:
         "amount": fmt(int(o["amount_minor"]), o["currency"]), "amount_minor": int(o["amount_minor"]), "currency": o["currency"],
         "discount": fmt(int(o.get("discount_minor", 0)), o["currency"]),
         "held": fmt(int(o.get("held_minor", 0)), o["currency"]), "refunded": fmt(int(o.get("refunded_minor", 0)), o["currency"]),
-        "resolution": o.get("resolution"), "checkout_url": o.get("checkout_url"),
+        "resolution": o.get("resolution"), "checkout_url": o.get("checkout_url"), "short_code": o["order_id"][-6:],
     }
 
 
@@ -145,15 +178,23 @@ def get_order(order_id: str, actor_sub: str, **_: Any) -> dict:
 
 
 def my_orders(actor_sub: str, **_: Any) -> dict:
-    return {"orders": [_summary(o) for o in get_stores().orders_for_buyer(actor_sub)[:5]]}
+    """Recent orders of the person we are talking to, as buyer or as seller (sellers see what awaits dispatch)."""
+    stores = get_stores()
+    seller_ids = {o["order_id"] for o in stores.orders_for_seller(actor_sub)}
+    rows = [{**_summary(o), "your_role": "seller" if o["order_id"] in seller_ids and o.get("buyer_sub") != actor_sub else "buyer"}
+            for o in _actor_orders(stores, actor_sub, allow_seller=True)]
+    return {"orders": rows[:5]}
 
 
 # --------------------------------------------------------------------------- hold → dispatch → deliver
-def record_dispatch(order_id: str, actor_sub: str, photo_key: str | None = None, correlation_id: str = "", **_: Any) -> dict:
-    stores = get_stores()
-    o = stores.get_order(order_id)
-    if not o:
-        raise ToolError(f"order {order_id} not found")
+def record_dispatch(order_id: str | None = None, actor_sub: str | None = None, photo_key: str | None = None,
+                    correlation_id: str = "", **_: Any) -> dict:
+    """Seller only. `order_id` may be the full ID, the 6-character code from the seller's alert, or omitted when the
+    seller has exactly one order waiting for dispatch."""
+    if not actor_sub:
+        raise ToolError("actor_sub is required")
+    o = _order_for(order_id, actor_sub, allow_seller=True, single_status="HELD", seller_only=True)
+    order_id = o["order_id"]
     if o.get("seller_sub") != actor_sub:
         raise ToolError("only the seller of this order can record dispatch")
     if o.get("status") != "HELD":

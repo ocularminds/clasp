@@ -195,10 +195,11 @@ make decisions
 2. Accept the order and open the hosted checkout link. The button creates a **simulated payment**;
    no card or bank credentials are needed. Confirm the order reaches `HELD` before dispatch.
 3. On the seller phone, show the SMS hold alert. The RCS router falls back to SMS for this
-   unverified RCS destination. Open the seller's WhatsApp chat with Clasp and send “Dispatch
-   order [the complete order ID from the SMS]” with the real parcel photo. Include the complete
-   ID rather than only its final six characters. The agent uses that ID to find the seller's
-   order; `my_orders` currently lists a buyer's orders only.
+   unverified RCS destination. Open the seller's WhatsApp chat with Clasp and send the real
+   parcel photo with “Dispatch order [the six-character code from the SMS]”. The full ID also
+   works, and when the seller has exactly one order awaiting dispatch the photo alone is enough:
+   `record_dispatch` resolves the seller's own orders by short code, and `my_orders` lists a
+   seller's orders too.
 4. Confirm `ingress.record` and `agent.turn.in` with `channel=whatsapp` for the seller's photo.
    Verify the media was fetched into the configured bucket, the dispatch callback completed,
    and the stored order reached `DISPATCHED`. Wait for the actual workflow state before

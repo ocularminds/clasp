@@ -28,6 +28,23 @@ def handle_turn(payload: dict) -> dict:
         called.append(name)
         return tools.call(name, {**args, "actor_sub": sub, "correlation_id": corr})
 
+    if payload.get("actor_role") == "seller":
+        full = re.search(r"ord_[a-f0-9]{6,}", low)
+        short = re.search(r"\b([a-f0-9]{6})\b", low)
+        ref = full.group(0) if full else (short.group(1) if short else None)
+        if payload.get("media_keys"):
+            r = run("record_dispatch", photo_key=payload["media_keys"][0], **({"order_id": ref} if ref else {}))
+            if r.get("status") == "DISPATCHED":
+                return {"text": f"Dispatch recorded for order {r['order_id'][-6:]}. The buyer has been sent a delivery code by SMS.",
+                        "order_id": r["order_id"], "tools_called": called}
+            return {"text": f"I couldn't record dispatch: {r.get('error')}", "tools_called": called}
+        mine = run("my_orders")["orders"]
+        held = [o for o in mine if o["status"] == "HELD"]
+        if held:
+            return {"text": "Orders waiting for dispatch: " + ", ".join(f"{o['short_code']} ({o['item']}, {o['amount']})" for o in held)
+                    + ". Send a photo of the packed parcel to record dispatch.", "tools_called": called}
+        return {"text": "You have no orders waiting for dispatch right now.", "tools_called": called}
+
     if button.get("id", "").startswith("truce:") and order:
         kind = button["id"].split(":")[-1]
         opts = {o["kind"]: o for o in run("get_truce_options", order_id=order["order_id"])["options"]}
