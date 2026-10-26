@@ -161,6 +161,15 @@ class DynamoStores:
         )
         return [from_ddb(i) for i in r.get("Items", [])]
 
+    def orders_for_seller(self, seller_sub: str) -> list[dict]:
+        r = self._t("orders").query(
+            IndexName="by_seller",
+            KeyConditionExpression="seller_sub = :s",
+            ExpressionAttributeValues={":s": seller_sub},
+            ScanIndexForward=False,
+        )
+        return [from_ddb(i) for i in r.get("Items", [])]
+
     def find_order_by_token(self, token: str) -> tuple[dict, str] | None:
         """Locate the order parked on a task token. Tiny tables; a filtered scan is fine."""
         for phase in ("payment", "dispatch", "delivery", "dispute", "approval"):
@@ -404,6 +413,10 @@ class LocalStores:
 
     def orders_for_buyer(self, buyer_sub):
         rows = [o for o in self._db["orders"].values() if o.get("buyer_sub") == buyer_sub]
+        return sorted((json.loads(json.dumps(o)) for o in rows), key=lambda o: o.get("created_at", 0), reverse=True)
+
+    def orders_for_seller(self, seller_sub):
+        rows = [o for o in self._db["orders"].values() if o.get("seller_sub") == seller_sub]
         return sorted((json.loads(json.dumps(o)) for o in rows), key=lambda o: o.get("created_at", 0), reverse=True)
 
     def find_order_by_token(self, token):

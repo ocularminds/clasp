@@ -161,3 +161,49 @@ def test_sms_reply_spells_out_buttons(plumbing, monkeypatch):
     dispatch.reply(Inbound(channel="sms", sender="+15550000001", to=None, text="x"),
                    {"text": "Pick one:", "buttons": [{"id": "a", "title": "Refund"}, {"id": "b", "title": "Credit"}]}, "c")
     assert plumbing.last("sms").text == "Pick one:\n1) Refund\n2) Credit" and plumbing.last("sms").buttons is None
+
+
+def test_unknown_whatsapp_sender_is_auto_enrolled_when_enabled(plumbing, stores, monkeypatch):
+    """Judging: with AUTO_ENROL_CHANNELS=whatsapp, first contact enrols the sender as a buyer with a stable identity.
+    Other channels keep rejecting unknown numbers."""
+    monkeypatch.setenv("AUTO_ENROL_CHANNELS", "whatsapp")
+    entry = whatsapp_entry({"from": "15550007777", "id": "j1", "type": "text", "text": {"body": "Is the bag available?"}})
+    e = json.loads(entry["whatsAppWebhookEntry"])
+    e["changes"][0]["value"]["contacts"] = [{"profile": {"name": "Judge Judy"}, "wa_id": "15550007777"}]
+    entry["whatsAppWebhookEntry"] = json.dumps(e)
+
+    out = ingress.lambda_handler(sns(entry), None)
+    assert out["results"][0]["status"] == "ok" and "start_order" in out["results"][0]["tools_called"]
+    party = stores.party_by_phone("+15550007777")
+    assert party["role"] == "buyer" and party["name"] == "Judge Judy" and party["auto_enrolled"] is True
+    sub = party["sub"]
+    assert stores.orders_for_buyer(sub)[0]["buyer_phone"] == "+15550007777"
+    assert plumbing.last("whatsapp").to == "+15550007777"
+
+    out2 = ingress.lambda_handler(sns(entry), None)  # second contact: same identity, no second party
+    assert out2["results"][0]["status"] == "ok" and stores.party_by_phone("+15550007777")["sub"] == sub
+
+    out3 = ingress.lambda_handler(sns({"originationNumber": "+15550008888", "messageBody": "hi"}), None)
+    assert out3["results"][0]["status"] == "unknown_sender"  # SMS is not in the flag
+
+
+def test_auto_enrol_is_off_by_default(plumbing, stores):
+    entry = whatsapp_entry({"from": "15550007777", "id": "j2", "type": "text", "text": {"body": "hello"}})
+    out = ingress.lambda_handler(sns(entry), None)
+    assert out["results"][0]["status"] == "unknown_sender" and stores.party_by_phone("+15550007777") is None
+
+
+def test_seller_dispatches_from_a_whatsapp_photo_with_the_short_code(plumbing, stores):
+    from services.tools import impl as tools
+
+    o = tools.start_order("item_bag", actor_sub="sub-buyer_demo")
+    pay(tools.create_checkout(o["order_id"], actor_sub="sub-buyer_demo")["checkout_url"].rsplit("/", 1)[-1])
+    assert stores.get_order(o["order_id"])["status"] == "HELD"
+    code = o["order_id"][-6:]
+    entry = whatsapp_entry({"from": "15550000002", "id": "s1", "type": "image",
+                            "image": {"id": "media-dispatch", "mime_type": "image/jpeg", "caption": f"Dispatch order {code}"}})
+    out = ingress.lambda_handler(sns(entry), None)
+    r = out["results"][0]
+    assert r["status"] == "ok" and r["tools_called"] == ["record_dispatch"], r
+    assert stores.get_order(o["order_id"])["status"] == "DISPATCHED"
+    assert code in plumbing.last("whatsapp").text

@@ -216,3 +216,40 @@ def test_webhook_signature_helpers():
     assert not checkout.verify("s", body, sig, now=5000)  # stale
     assert not checkout.verify("other", body, sig, now=1100)
     assert not checkout.verify("s", b'{"a":2}', sig, now=1100)
+
+
+def _hold(w, buyer_sub: str) -> dict:
+    o = tools.start_order("item_bag", actor_sub=buyer_sub)
+    pay(tools.create_checkout(o["order_id"], actor_sub=buyer_sub)["checkout_url"].rsplit("/", 1)[-1])
+    return w["stores"].get_order(o["order_id"])
+
+
+def test_seller_finds_orders_by_short_code_or_single_held_order(world):
+    """The seller's alert shows a 6-character code. Tools accept it, and with one open order no reference is needed.
+    Short codes resolve only within the caller's own orders."""
+    w = world
+    seller = w["seller"]
+    o1 = buy_and_hold(w)
+    code1 = o1["order_id"][-6:]
+
+    mine = tools.my_orders(actor_sub=seller)["orders"]
+    assert len(mine) == 1 and mine[0]["your_role"] == "seller" and mine[0]["short_code"] == code1
+    assert tools.get_order(code1, actor_sub=seller)["order_id"] == o1["order_id"]
+    assert tools.get_order(f"…{code1}", actor_sub=w["buyer"])["order_id"] == o1["order_id"]
+    with pytest.raises(tools.ToolError, match="not found"):
+        tools.get_order(code1, actor_sub="sub-buyer_demo_2")  # not this buyer's order
+    with pytest.raises(tools.ToolError, match="only the seller"):
+        tools.record_dispatch(o1["order_id"], actor_sub=w["buyer"], photo_key="x")
+
+    r = tools.record_dispatch(actor_sub=seller, photo_key="dispatch/demo.jpg")  # one HELD order: no reference
+    assert r["order_id"] == o1["order_id"] and r["status"] == "DISPATCHED"
+
+    o2 = _hold(w, w["buyer"])
+    o3 = _hold(w, "sub-buyer_demo_2")
+    with pytest.raises(tools.ToolError, match="2 orders"):
+        tools.record_dispatch(actor_sub=seller, photo_key="dispatch/demo.jpg")
+    r = tools.record_dispatch(o3["order_id"][-6:], actor_sub=seller, photo_key="dispatch/demo.jpg")
+    assert r["order_id"] == o3["order_id"]
+    assert w["stores"].get_order(o2["order_id"])["status"] == "HELD"
+    roles = {o["order_id"]: o["your_role"] for o in tools.my_orders(actor_sub=w["buyer"])["orders"]}
+    assert roles[o1["order_id"]] == "buyer" and o3["order_id"] not in roles

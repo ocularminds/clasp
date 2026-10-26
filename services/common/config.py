@@ -132,6 +132,12 @@ class Settings:
         return env("NOTIFY_MODE", "console") or "console"
 
     @property
+    def auto_enrol_channels(self) -> frozenset[str]:
+        """Channels whose unknown senders are enrolled as buyers on first contact (judging / demo). Empty = reject."""
+        raw = env("AUTO_ENROL_CHANNELS", "") or ""
+        return frozenset(c.strip().lower() for c in raw.split(",") if c.strip())
+
+    @property
     def whatsapp_phone_number_id(self) -> str | None:
         return env("WHATSAPP_PHONE_NUMBER_ID")
 

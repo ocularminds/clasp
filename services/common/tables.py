@@ -7,6 +7,7 @@ TABLE_SPECS: dict[str, dict] = {
         "pk": "order_id",
         "gsis": {
             "by_buyer": {"pk": "buyer_sub", "sk": "created_at"},
+            "by_seller": {"pk": "seller_sub", "sk": "created_at"},
             "by_checkout": {"pk": "checkout_id"},
         },
     },

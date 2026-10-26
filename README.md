@@ -62,8 +62,10 @@ only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches
 
 * **Offline, in two minutes:** `make deps && make test && make simulate`. Every channel message is printed,
   and the run ends with the ledger and the AgentSafe decision log, including the denied "$1,000" injection.
-* **On phones:** follow `demo/RUNBOOK.md` and arrange access with the team. Personal test numbers and
-  mailboxes stay in the ignored `.env`. Both buyer and seller initiate their WhatsApp chats so replies
+* **On phones:** follow `demo/RUNBOOK.md`. With `AUTO_ENROL_CHANNELS=whatsapp` set on the ingress Lambda, any
+  WhatsApp number that messages the business number is enrolled as a buyer on first contact, with its own Cognito
+  identity, so judges can buy and dispute without being seeded. Personal test numbers and mailboxes stay in the
+  ignored `.env`. Both buyer and seller initiate their WhatsApp chats so replies
   stay inside each conversation's 24-hour customer-service window.
 * **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
   (delivery = one-time SMS code) and production-grade image forensics (the model only reports; AgentSafe decides).

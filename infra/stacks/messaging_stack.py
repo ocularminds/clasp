@@ -56,14 +56,20 @@ class MessagingStack(Stack):
              "COGNITO_USER_POOL_ID": data.user_pool.user_pool_id, "SSM_PREFIX": f"/clasp/{stage()}",
              "WHATSAPP_PHONE_NUMBER_ID": env("WHATSAPP_PHONE_NUMBER_ID"), "RCS_POOL_ID": env("RCS_POOL_ID"),
              "SMS_ORIGINATION_IDENTITY": env("SMS_ORIGINATION_IDENTITY"), "SES_FROM_EMAIL": env("SES_FROM_EMAIL"),
-             "AGENT_RUNTIME_ARN": env("AGENT_RUNTIME_ARN")},
+             "AGENT_RUNTIME_ARN": env("AGENT_RUNTIME_ARN"), "AUTO_ENROL_CHANNELS": env("AUTO_ENROL_CHANNELS")},
             timeout=120, memory=512, description="SNS → normalize → resolve sub → InvokeAgentRuntime → reply",
         )
         self.ingress.add_event_source(sources.SnsEventSource(self.whatsapp_topic))
         self.ingress.add_event_source(sources.SnsEventSource(self.sms_topic))
         read_tables(self.ingress, data, "parties", "orders")
         data.media.grant_read_write(self.ingress)
-        self.ingress.add_to_role_policy(iam.PolicyStatement(actions=["cognito-idp:ListUsers"], resources=[data.user_pool.user_pool_arn]))
+        # ListUsers resolves a phone to its sub; AdminCreateUser/AdminGetUser enrol first-contact senders when
+        # AUTO_ENROL_CHANNELS is set. Enrolment also writes the parties table (never the ledger).
+        self.ingress.add_to_role_policy(iam.PolicyStatement(
+            actions=["cognito-idp:ListUsers", "cognito-idp:AdminCreateUser", "cognito-idp:AdminGetUser"],
+            resources=[data.user_pool.user_pool_arn]))
+        self.ingress.add_to_role_policy(iam.PolicyStatement(actions=["dynamodb:PutItem", "dynamodb:UpdateItem"],
+                                                            resources=[data.tables["parties"].table_arn]))
         self.ingress.add_to_role_policy(iam.PolicyStatement(
             actions=MESSAGING_ACTIONS + ["social-messaging:GetWhatsAppMessageMedia", "ssm:GetParameter"], resources=["*"]))
         # IAM Policy Autopilot maps the user-bound call to both permissions.

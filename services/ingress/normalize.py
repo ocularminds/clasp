@@ -23,6 +23,7 @@ class Inbound:
     text: str
     media: list[dict] = field(default_factory=list)
     button: dict | None = None         # {id, title}
+    sender_name: str | None = None     # WhatsApp profile name when the webhook carries contacts[]
     message_id: str | None = None
     ts: int | None = None
     raw: dict = field(default_factory=dict)
@@ -85,6 +86,8 @@ def _parse_whatsapp(body: dict) -> list[Inbound]:
         if change.get("field") != "messages" and "messages" not in value:
             continue
         to = _e164((value.get("metadata") or {}).get("display_phone_number"))
+        names = {str(c.get("wa_id")): ((c.get("profile") or {}).get("name") or None)
+                 for c in (value.get("contacts") or []) if isinstance(c, dict)}
         for msg in value.get("messages") or []:
             kind = msg.get("type")
             text, media, button = "", [], None
@@ -110,7 +113,7 @@ def _parse_whatsapp(body: dict) -> list[Inbound]:
             except (TypeError, ValueError):
                 ts = None
             out.append(Inbound(channel="whatsapp", sender=_e164(msg.get("from")) or "", to=to, text=text, media=media,
-                               button=button, message_id=msg.get("id"), ts=ts,
+                               button=button, sender_name=names.get(str(msg.get("from"))), message_id=msg.get("id"), ts=ts,
                                raw={"context": body.get("context"), "message": msg}))
     return out
 

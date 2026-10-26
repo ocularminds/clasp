@@ -15,7 +15,7 @@ from ..common.ids import correlation_id as new_corr
 from ..common.log import Log
 from ..common.media import get_media
 from ..notify import router as notify
-from .identity import resolve_sub
+from .identity import auto_enrol, resolve_sub
 from .normalize import Inbound
 
 log = Log("ingress")
@@ -122,6 +122,12 @@ def handle_inbound(inbound: Inbound) -> dict:
     corr = new_corr()
     ilog = log.bind(correlation_id=corr, channel=inbound.channel, sender=inbound.sender)
     sub, party = resolve_sub(inbound.sender)
+    if not sub and inbound.channel in settings.auto_enrol_channels:
+        try:
+            sub, party = auto_enrol(inbound.sender, inbound.sender_name)
+            ilog.info("ingress.auto_enrolled", actor_sub=sub, role=party.get("role"))
+        except Exception as e:  # noqa: BLE001
+            ilog.error("ingress.auto_enrol_failed", error=str(e))
     if not sub:
         ilog.warn("ingress.unknown_sender")
         notify.send(channel=inbound.channel, to=inbound.sender, correlation_id=corr,
