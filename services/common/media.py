@@ -38,10 +38,12 @@ class S3Media(MediaStore):
         except Exception:  # noqa: BLE001
             return False
 
-    def copy_from_presigned_target(self, key: str) -> dict:
+    def copy_from_presigned_target(self, key: str, content_type: str = "application/octet-stream") -> dict:
         """Presigned PUT used by GetWhatsAppMessageMedia(destinationS3PresignedUrl)."""
-        url = self._s3.generate_presigned_url("put_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=600)
-        return {"url": url, "headers": {}}
+        url = self._s3.generate_presigned_url(
+            "put_object", Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type}, ExpiresIn=600,
+        )
+        return {"url": url, "headers": {"Content-Type": content_type}}
 
 
 class LocalMedia(MediaStore):

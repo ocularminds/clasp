@@ -2,7 +2,9 @@
 
 Read warmly, as though you are showing the product to one person. Aim for about 125–135 words
 per minute and leave the marked pauses for the on-screen actions. The timings are editing
-guides, not words to read aloud. Keep the final audio track at 180 seconds, including pauses.
+guides, not words to read aloud. Keep the final video under three minutes, including the
+three-second typewritten Clasp opening and five-second Clasp closing. Use real phone,
+email and console captures through the body, with a small square narrator at bottom-left.
 
 This is a script for the planned live recording. Match each claim to the captured result;
 the WhatsApp workflow still needs to run successfully before the video can be submitted.
@@ -17,7 +19,7 @@ Today we're using WhatsApp, SMS and email. RCS is configured, but handset delive
 
 ## 0:20–0:50 — Buy and confirm the hold
 
-I'm the buyer here. I ask about the camera bag and a ten-percent discount.
+I'm the buyer here, and I ask about the Zoom H6 recorder and a ten percent discount.
 
 Claude, on Amazon Bedrock, checks the live catalogue through AgentCore and creates a checkout link.
 
@@ -29,14 +31,14 @@ service sends a signed confirmation.
 ## 0:50–1:10 — Seller dispatch
 
 Now the seller gets an SMS alert. They open WhatsApp and send the order number with a photo
-of the packed bag.
+of the packed recorder.
 
 Clasp records the dispatch, and sends the buyer a delivery code by SMS.
 
 ## 1:10–1:25 — Something goes wrong
 
-Entering that code would release the payout. But the strap has arrived torn, so I leave it
-unused and report the damage.
+Entering that code would release the payout, but the recorder's battery cover has arrived
+damaged. So I leave the code unused and report the damage.
 
 Clasp calls a Truce.
 
@@ -44,7 +46,7 @@ Clasp calls a Truce.
 
 The payout stays on hold.
 
-Clasp asks for a fresh photo with a one-time code beside the bag. The model checks the photo.
+Clasp asks for a fresh photo with a one-time code beside the recorder. The model checks the photo.
 A separate policy service, AgentSafe, decides what can happen.
 
 Then I ask for a thousand-dollar refund.
@@ -82,5 +84,7 @@ If the live log shows an actual AgentSafe denial for the $1,000 proposal, the bo
 “AgentSafe refuses it, and the ledger hasn't changed.” If the model declines before calling the
 tool, keep the main script's wording; do not present that as a policy-service decision.
 
-Record the narration after checking the captured sequence. Save it as
-`demo/recordings/narration.m4a` or `.wav`; pass that actual path to `demo/compose_demo.py`.
+The supplied narration has already been cropped and cleaned. Record the four item-specific
+replacement lines with the same framing and sound, then match their timing to the real
+workflow captures. Keep the original recording and its earlier edit intact. The older
+`demo/compose_demo.py` layout does not include these bookends or the narrator inset.

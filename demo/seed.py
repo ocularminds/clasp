@@ -18,6 +18,9 @@ from services.common.stores import get_stores  # noqa: E402
 log = Log("seed")
 
 ITEMS = [
+    {"item_id": "item_zoom_h6", "name": "Zoom H6 sound recorder", "price_minor": 12000, "currency": "USD", "stock": 1,
+     "seller_id": "seller_demo",
+     "description": "Zoom H6 portable sound recorder. Demo listing; inspect the actual dispatch photos for physical condition. Payments in this prototype are simulated."},
     {"item_id": "item_bag", "name": "Vintage leather camera bag", "price_minor": 12000, "currency": "USD", "stock": 5,
      "seller_id": "seller_demo", "description": "Full-grain leather, fits a body and two lenses. Light wear on the strap.",
      "image_url": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800"},

@@ -104,7 +104,8 @@ class AwsNotifier(Notifier):
 
     # -- WhatsApp -------------------------------------------------------------
     def _whatsapp_payload(self, msg: Message) -> dict:
-        to = msg.to.lstrip("+")
+        # EUM Social validates the destination as E.164, including the leading +.
+        to = msg.to
         if msg.buttons:
             return {
                 "messaging_product": "whatsapp", "recipient_type": "individual", "to": to, "type": "interactive",
@@ -126,7 +127,7 @@ class AwsNotifier(Notifier):
         pn = settings.whatsapp_phone_number_id
         if not pn:
             raise RuntimeError("WHATSAPP_PHONE_NUMBER_ID is not set (TODO(human): link the WABA in the EUM Social console)")
-        r = self._client("socialmessaging").send_whats_app_message(
+        r = self._client("socialmessaging").send_whatsapp_message(
             originationPhoneNumberId=pn, metaApiVersion=settings.meta_api_version,
             message=json.dumps(self._whatsapp_payload(msg)).encode("utf-8"),
         )

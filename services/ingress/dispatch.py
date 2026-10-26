@@ -38,9 +38,10 @@ def fetch_whatsapp_media(inbound: Inbound) -> list[str]:
         if pn and settings.media_bucket:
             from ..common.aws import client
 
-            client("socialmessaging").get_whats_app_message_media(
+            # S3File.key is a prefix; a presigned PUT preserves the exact key the agent reads.
+            client("socialmessaging").get_whatsapp_message_media(
                 mediaId=m["id"], originationPhoneNumberId=pn,
-                destinationS3File={"bucketName": settings.media_bucket, "key": key},
+                destinationS3PresignedUrl=media.copy_from_presigned_target(key, m.get("mime") or "application/octet-stream"),
             )
         else:
             media.put(key, b"", m.get("mime") or "application/octet-stream")  # local placeholder
