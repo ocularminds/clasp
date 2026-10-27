@@ -1,15 +1,16 @@
-.venv/
+# No trailing slash: worktrees symlink .venv and node_modules, and "dir/" never matches a symlink.
+.venv
 __pycache__/
 *.pyc
 .pytest_cache/
 .env
-cdk.out/
+cdk.out*/
 .cdk.staging/
 *.egg-info/
 .bedrock_agentcore.yaml
 .agentcore/
 .bedrock_agentcore/
-node_modules/
+node_modules
 infra/cdk-outputs.json
 demo/recordings/
 demo/deployment-state/
