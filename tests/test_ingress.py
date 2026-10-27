@@ -154,6 +154,22 @@ def test_whatsapp_turn_round_trips_through_scripted_agent(plumbing, stores):
     assert code  # unused on this path; the Truce replaced delivery
 
 
+@pytest.mark.parametrize("failure", [RuntimeError("runtime 500"), {"text": "", "error": "model timeout"}])
+def test_a_failed_agent_turn_still_answers_once(plumbing, monkeypatch, failure):
+    from services.ingress import dispatch
+
+    def agent(payload):
+        if isinstance(failure, Exception):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(dispatch, "invoke_agent", agent)
+    out = ingress.lambda_handler(sns(whatsapp_entry({"from": "15550000001", "id": "f1", "type": "text",
+                                                     "text": {"body": "where is my order?"}})), None)
+    assert out["results"][0]["status"] == "ok"  # handled: SNS won't redeliver the same turn
+    assert plumbing.last("whatsapp").text == dispatch.AGENT_FAILED
+
+
 def test_sms_reply_spells_out_buttons(plumbing, monkeypatch):
     from services.ingress import dispatch
     from services.ingress.normalize import Inbound

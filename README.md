@@ -19,9 +19,10 @@ rejects or doesn't answer, a Clasp supervisor decides.
 
 > Status: seven CDK stacks and the AgentCore runtime are deployed, and two live Zoom H6 orders completed
 > a Truce on WhatsApp with a 20% partial refund (see [deployment status](docs/deployment-status.md)).
-> Those runs used the earlier flow, where the seller dispatched by WhatsApp. The autonomous flow on this
-> branch (courier dispatch, seller-then-supervisor approval, drift, settlement, the Decionis gateway in
-> enforcement) is tested offline and awaits deployment. SMS and SES have production access. RCS is configured but untested on a supported handset. The
+> Those runs used the earlier flow, where the seller dispatched by WhatsApp. The autonomous flow (courier
+> dispatch, seller-then-supervisor approval, drift, settlement, the Decionis gateway in enforcement at
+> `clasp.decionisedge.com`) was deployed on 27 October and passes `make gateway-check`; no live order has run
+> through it yet. SMS and SES have production access. RCS is configured but untested on a supported handset. The
 > [runbook](demo/RUNBOOK.md) has the recording plan.
 
 ## The invariant
@@ -40,14 +41,16 @@ replayed and wrong-actor authorizations are all refused and nothing is written.
 `tests/test_boundary.py` checks statically that no module outside the executor can commit a money move.
 `tests/test_autonomy.py` covers drift, stage-bound approvals, settlement and the Decionis gateway path.
 
-**Decionis AgentSafe.** With `AGENTSAFE_URL` set (e.g. `https://dci.decionisedge.com`), every decision is
+**Decionis AgentSafe.** With `AGENTSAFE_URL` set (e.g. `https://clasp.decionisedge.com`), every decision is
 sent through the Decionis AgentSafe hosted gateway with the tenant key. The gateway records a Decionis
 dossier and relays the call to Clasp's bearer-protected `POST /decide`. There the reference policy service
 decides and signs, and the decision log keeps the gateway's dossier reference. The gateway runs in enforcement:
 it can block (`403`) or hold (`202`) a call before Clasp ever sees it, and it fails closed. Clasp does the same.
 If the gateway can't answer, the request is denied as `decionis_unavailable` and nothing moves; going around an
-enforcing gateway would defeat it. A payment hold answers the PSP with 503 so it retries, and settlement retries
-in Step Functions. With `AGENTSAFE_GATEWAY_MODE=shadow` the gateway only observes, and the reference service decides
+enforcing gateway would defeat it. A payment that can't be held shows the buyer an error on the checkout page and
+they can press Pay again (the mock PSP doesn't redeliver its webhook); settlement retries in Step Functions. The
+reference service's Lambda also refuses a direct decide request while an enforcing gateway is configured, so
+another Clasp Lambda can't get an authorization by invoking it instead of going through the gateway. With `AGENTSAFE_GATEWAY_MODE=shadow` the gateway only observes, and the reference service decides
 directly when it is unreachable. Clasp serves the origin proof an enforcing gateway checks at
 `/.well-known/agentsafe-upstream`, and `make gateway-check` verifies the key and the relay without creating a decision.
 
@@ -214,10 +217,10 @@ real-phone recording still require the relevant person or service:
    topics (two CLI commands in `demo/RUNBOOK.md`), then `make agent-deploy` and `make seed`.
 7. Export `docs/architecture.png` with `demo/export_assets.py` for the Devpost architecture field.
 8. Verify the existing ACE opportunity's campaign association; do not create a duplicate.
-9. Decionis AgentSafe (enforcement): rotate the `dci` tenant key (the previous one was lost) and store it in
+9. Decionis AgentSafe (enforcement): the `clasp` tenant at `https://clasp.decionisedge.com`. Store its tenant key in
    `clasp/dev/decionis-tenant-key`. Set the tenant's upstream to the origin of `API_BASE_URL`, and its
    `upstreamCredential` to `authorization: Bearer <clasp/dev/agentsafe-upstream-token>`. Put `make upstream-proof`'s
-   token in `.env` as `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://dci.decionisedge.com`, `make deploy`,
+   token in `.env` as `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://clasp.decionisedge.com`, `make deploy`,
    then `make gateway-check`. The [runbook](demo/RUNBOOK.md) has the steps. Without `AGENTSAFE_URL` every decision
    uses the reference service directly.
 

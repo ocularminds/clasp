@@ -69,7 +69,7 @@ logs:            ## Tail Lambda logs for the stage
 courier:         ## Courier pickup for ORDER=<code> (link to the pickup page, or PHOTO=<jpeg> to scan now)
 	$(PY) demo/courier.py $(ORDER) $(if $(PHOTO),--photo $(PHOTO),)
 
-upstream-proof:  ## Origin proof for the Decionis gateway: TENANT=dci ORG=<organization uuid>
+upstream-proof:  ## Origin proof for the Decionis gateway: TENANT=clasp ORG=<organization uuid>
 	$(PY) demo/gateway.py proof --tenant $(TENANT) --organization $(ORG)
 
 gateway-check:   ## Read-only check that the Decionis gateway accepts the key and reaches /decide's origin

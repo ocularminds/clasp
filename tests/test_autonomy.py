@@ -105,7 +105,7 @@ def gateway_client(agentsafe, monkeypatch, respond, mode="enforcement"):
         return respond(sent[-1])
 
     monkeypatch.setattr(requests, "post", post)
-    return adapter.AgentSafeClient(url="https://dci.decionisedge.com", service=agentsafe, tenant_key="tenant-key",
+    return adapter.AgentSafeClient(url="https://clasp.decionisedge.com", service=agentsafe, tenant_key="tenant-key",
                                    upstream_token="upstream-token", timeout=3, mode=mode), sent
 
 
@@ -126,7 +126,7 @@ def test_gateway_relays_to_the_reference_service_and_keeps_its_signature(agentsa
                       evidence={"challenge_verified": True, "verdict": VERDICT}, correlation_id="corr-test")
     assert d.decision == "allow" and d.authorization and d.engine == "decionis-gateway:enforcement"
     h = sent[0]["headers"]
-    assert sent[0]["url"] == "https://dci.decionisedge.com/decide" and h["AgentSafe-Tenant-Key"] == "tenant-key"
+    assert sent[0]["url"] == "https://clasp.decionisedge.com/decide" and h["AgentSafe-Tenant-Key"] == "tenant-key"
     assert h["Idempotency-Key"] and "tenant-key" not in sent[0]["url"]
     record = agentsafe.stores.decisions_for_order(order["order_id"])[-1]
     assert record["engine"] == "decionis-gateway" and record["context"]["decionis"] == {"dossier_id": "dsr_1", "decision_id": "dcn_1"}
@@ -174,7 +174,8 @@ def test_a_held_call_becomes_a_clasp_escalation(agentsafe, make_order, monkeypat
     client, _ = gateway_client(agentsafe, monkeypatch, lambda _: held)
     d = client.decide(action="refund", order_id=order["order_id"], amount_minor=2400, currency="USD", actor_sub=BUYER,
                       evidence={"challenge_verified": True, "verdict": VERDICT})
-    assert d.decision == "escalate" and d.reason == "decionis_escalate: HUMAN_REVIEW" and "holding this request" in d.message
+    assert d.decision == "escalate" and d.reason == "decionis_escalate: HUMAN_REVIEW"
+    assert d.message == "This needs a human check, so the seller has been asked to approve it."
 
 
 def test_a_gateway_block_is_final_and_recorded(agentsafe, make_order, monkeypatch):
@@ -224,6 +225,22 @@ def test_decide_over_http_needs_the_upstream_token(agentsafe, make_order, monkey
     assert agentsafe.stores.decisions_for_order(order["order_id"]) == []
     monkeypatch.delenv("AGENTSAFE_UPSTREAM_TOKEN")
     assert agentsafe_handler.lambda_handler({**base, "headers": {"authorization": "Bearer "}}, None)["statusCode"] == 401  # fail closed
+
+
+def test_an_enforcing_gateway_cannot_be_bypassed_by_invoking_the_lambda(agentsafe, make_order, monkeypatch):
+    order = make_order(status="DISPUTED", amount=12000)
+    req = refund(order, 2400, {"challenge_verified": True, "verdict": VERDICT}).to_dict()
+    monkeypatch.setenv("AGENTSAFE_URL", "https://clasp.decionisedge.com")
+    out = agentsafe_handler.lambda_handler(dict(req), None)
+    assert out["decision"] == "deny" and out["reason"].startswith("gateway_required") and "authorization" not in out
+    assert agentsafe.stores.decisions_for_order(order["order_id"]) == []  # nothing decided, nothing recorded
+    # what the adapter still needs directly: record a gateway refusal (never an allow)
+    rec = agentsafe_handler.lambda_handler({"op": "record_external", "request": req, "decision": "deny",
+                                            "reason": "decionis_block: TEST", "engine": "decionis-gateway"}, None)
+    assert rec["decision"] == "deny"
+    # shadow keeps the direct fallback, and so does a deployment with no gateway at all
+    monkeypatch.setenv("AGENTSAFE_GATEWAY_MODE", "shadow")
+    assert agentsafe_handler.lambda_handler(dict(req), None)["decision"] == "allow"
 
 
 # --------------------------------------------------------------------------- HTTP surfaces

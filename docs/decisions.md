@@ -38,8 +38,10 @@
   call, records a dossier and relays it to its tenant's upstream; it doesn't sign Clasp's authorizations. So the
   reference service stays the signer behind a token-protected `POST /decide` that serves the gateway's origin proof.
   In enforcement, an unanswered gateway means no decision: the request is denied as `decionis_unavailable` (it doesn't
-  count as buyer pressure), the PSP webhook answers 503 so the hold is retried, and settlement retries in Step
-  Functions. Only `AGENTSAFE_GATEWAY_MODE=shadow` falls back to the reference service. A gateway block is final and
+  count as buyer pressure), the PSP webhook answers 503 and the checkout page lets the buyer press Pay again (the
+  mock PSP doesn't redeliver), and settlement retries in Step Functions. Only `AGENTSAFE_GATEWAY_MODE=shadow` falls
+  back to the reference service; in enforcement its Lambda refuses a direct decide request, so no other Clasp
+  Lambda can reach an allow except through the gateway. A gateway block is final and
   recorded; a held call becomes a Clasp escalation.
 - **Plain words from policy.** AgentSafe returns a `message` for the person next to the reason code, so neither the
   model nor the scripted agent has to translate `evidence.challenge_verified == true`.

@@ -58,7 +58,8 @@ doesn't answer within 24 hours. Approval links open a confirmation page; only th
 Every decision passes through the Decionis AgentSafe hosted gateway when `AGENTSAFE_URL` is set. In enforcement it
 can block or hold a call; otherwise it records a dossier and relays the call to the token-protected `POST /decide`,
 where the reference service decides and signs. If the gateway can't answer, nothing moves: the request is denied,
-and payment holds and settlement are retried. Only shadow mode falls back to the reference service.
+the buyer can retry the payment, and settlement is retried. Only shadow mode falls back to the reference service;
+in enforcement the reference service's Lambda refuses a decide request that didn't come through the gateway.
 
 The mock PSP and courier record simulated holds, pickups and payouts. Actor binding, deterministic policy checks,
 signed authorizations and the executor enforce the demo's money boundary. The model's evidence

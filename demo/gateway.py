@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Decionis AgentSafe hosted gateway helpers. Read-only: neither command creates a decision or a dossier.
 
-    make upstream-proof TENANT=dci ORG=<workspace organization uuid>
+    make upstream-proof TENANT=clasp ORG=<workspace organization uuid>
         prints the token Clasp's API must serve at /.well-known/agentsafe-upstream; put it in .env as
         AGENTSAFE_UPSTREAM_PROOF and `make deploy`
 

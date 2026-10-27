@@ -152,7 +152,8 @@ class WorkflowStack(Stack):
         next_stage = work("NextApprovalStage", "next_approval_stage", last=sfn.JsonPath.object_at("$.error"))
         await_supervisor = wait("AwaitSupervisorApproval", "approval", hours=approval_hours.get("supervisor", 48))
         notify_outcome = work("NotifyOutcome", "notify_outcome")
-        redisputed = work("MarkDisputedAfterRejection", "mark_disputed", last={"after_rejection": True})
+        redisputed = work("MarkDisputedAfterRejection", "mark_disputed",  # the error tells a rejection from a timeout
+                          last={"after_rejection": True, "error": sfn.JsonPath.string_at("$.error.Error")})
 
         delivery_outcome = (sfn.Choice(self, "DeliveryOutcome")
                             .when(sfn.Condition.string_equals("$.last.outcome", "released"), send_receipts.next(released))

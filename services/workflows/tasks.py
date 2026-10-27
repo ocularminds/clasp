@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 from typing import Any
 
 from ..common import clock, events
@@ -33,6 +34,7 @@ WAIT_STATUS = {"payment": "PAYMENT_PENDING", "dispatch": None, "delivery": None,
 DELIVERY_CODE_TTL = 72 * 3600
 CHALLENGE_CODE_TTL = 15 * 60
 MAX_NOTICES = 20
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 KIND_LABEL = {"refund": "refund", "partial_refund": "refund", "credit": "store credit", "store_credit": "store credit",
               "replacement": "replacement"}
@@ -142,6 +144,13 @@ def ladder_buttons(order: dict) -> tuple[str, list[dict]]:
                                                    for o in opts]
 
 
+def asked_for(esc: dict, currency: str) -> str:
+    """What the escalated request was, for the buyer: '$108.00 refund', or just 'replacement' when no money moves."""
+    kind = KIND_LABEL.get(esc.get("kind", "refund"), "refund")
+    amount = int(esc.get("amount_minor") or 0)
+    return f"{fmt(amount, esc.get('currency', currency))} {kind}" if amount else kind
+
+
 # --------------------------------------------------------------------------- waits
 def register_token(order_id: str, phase: str, token: str, correlation_id: str = "") -> dict:
     updates: dict[str, Any] = {f"tokens.{phase}": token}
@@ -214,9 +223,13 @@ def mark_dispatched(order_id: str, output: dict | None = None) -> dict:
                                   expected_status=["HELD", "RESOLVED_REPLACEMENT"])
     photo_url = get_media().url(o["dispatch_photo_key"]) if o.get("dispatch_photo_key") else None
     what = f"replacement {o.get('item_name')}" if replacement else o.get("item_name")
+    # In auto courier mode the pickup photo is the listing photo, so it isn't presented as the courier's.
+    photo = ("Here's the photo the courier took at pickup." if settings.courier_mode != "auto"
+             else "Here's the reference photo recorded for this shipment.")
     text = (f"Your {what} (order {short(order_id)}) has been picked up by the courier."
-            + (" Here's the parcel photo from pickup." if photo_url else "")
-            + " Your delivery code is on its way by text message. Share it with me only once the item is in your hands.")
+            + (f" {photo}" if photo_url else "")
+            + " Your delivery code is coming by text message. When the item arrives and looks right, send me that code: "
+              "it pays the seller. If anything is damaged or wrong, tell me here instead and don't send the code.")
     tell_buyer(o, text, media_url=photo_url)
     events.emit("OrderDispatched", o, has_dispatch_photo=bool(o.get("dispatch_photo_key")), replacement=replacement)
     return {"status": "DISPATCHED"}
@@ -301,11 +314,13 @@ def mark_disputed(order_id: str, output: dict | None = None) -> dict:
     o = get_stores().update_order(order_id, updates, expected_status=["DISPATCHED", "DELIVERED", "ESCALATED", "DISPUTED"])
     code = short(order_id)
     if after_rejection:
-        esc = before.get("escalation") or {}
-        asked = fmt(int(esc.get("amount_minor") or 0), esc.get("currency", o["currency"]))
-        _, buttons = ladder_buttons(o)
-        tell_buyer(o, f"A Clasp supervisor reviewed your request for order {code} and couldn't approve the {asked} "
-                      f"{KIND_LABEL.get(esc.get('kind', 'refund'), 'refund')}. Here's what I can still offer:", buttons=buttons)
+        asked = asked_for(before.get("escalation") or {}, o["currency"])
+        offer, buttons = ladder_buttons(o)
+        lead = {"States.Timeout": f"Your request for the {asked} on order {code} wasn't decided in time",
+                "ApprovalRejected": f"A Clasp supervisor didn't approve the {asked} for order {code}",
+                "ApprovalRejectedFinal": f"A Clasp supervisor didn't approve the {asked} for order {code}",
+                }.get(str(output.get("error") or ""), f"The {asked} for order {code} wasn't approved")
+        tell_buyer(o, f"{lead}, so it can't go ahead. Here's what I can still offer: {offer}.", buttons=buttons)
     else:
         text = (f"The buyer reported a problem with order {code}. Clasp has called a Truce: your payout stays held while "
                 "evidence is collected. Nothing to do yet; you'll only be asked if a decision needs you.")
@@ -454,10 +469,11 @@ def next_approval_stage(order_id: str, output: dict | None = None) -> dict:
     history = list(esc.get("history") or []) + [{"stage": current, "outcome": seller_outcome, "at": clock.now()}]
     o = get_stores().update_order(order_id, {"escalation.stage": nxt["role"], "escalation.seller_outcome": seller_outcome,
                                              "escalation.history": history})
-    amount = fmt(int(esc.get("amount_minor") or 0), esc.get("currency", o["currency"]))
-    lead = "The seller didn't approve" if seller_outcome == "rejected" else "The seller hasn't answered about"
-    tell_buyer(o, f"{lead} the {amount} {KIND_LABEL.get(esc.get('kind', 'refund'), 'refund')} for order {short(order_id)}, "
-                  "so a Clasp supervisor is reviewing it now. I'll message you here with the answer.")
+    lead = {"rejected": "The seller didn't approve", "unreachable": "The seller couldn't be reached about"}.get(
+        seller_outcome, "The seller didn't reply in time about")
+    hours = max(1, int(nxt.get("ttl_seconds") or 0) // 3600)
+    tell_buyer(o, f"{lead} the {asked_for(esc, o['currency'])} for order {short(order_id)}, so a Clasp supervisor will "
+                  f"decide within {hours} hours. Nothing has been paid yet; I'll message you here with the answer.")
     return send_approval_email(order_id)
 
 
@@ -542,7 +558,8 @@ def send_evidence_pack(order_id: str, output: dict | None = None) -> dict:
             "decisions": [{k: d.get(k) for k in ("decision_id", "action", "amount_minor", "decision", "reason", "message", "engine",
                                                  "policy_version", "ts")} for d in decisions],
             "evidence": [{k: c.get(k) for k in ("challenge_id", "kind", "status", "verdict", "created_at")} for c in challenges]}
-    body = json.dumps(pack, indent=2, default=str)
+    # Both parties get the same pack: no one's email address (the buyer's, the seller's or an approver's) goes in it.
+    body = EMAIL_RE.sub("[address withheld]", json.dumps(pack, indent=2, default=str))
     status, code, cur = o.get("status", ""), short(order_id), o["currency"]
     label = OUTCOME_LABEL.get(status, STATUS_WORDS.get(status, status.lower()))
     moved = int(o.get("refunded_minor") or 0) or int(o.get("credited_minor") or 0)

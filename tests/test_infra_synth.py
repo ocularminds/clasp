@@ -50,6 +50,8 @@ def test_state_machine_mirrors_local_runner(templates):
     assert "waitForTaskToken" in definition and "ApprovalRejected" in definition and "ApprovalRejectedFinal" in definition
     assert "States.Timeout" in definition  # seller silence moves the decision on
     assert "DecionisUnavailable" in definition  # an unanswered enforcing gateway is retried, not skipped
+    # the buyer is told a rejection apart from a timeout: the caught error reaches mark_disputed
+    assert '\\"after_rejection\\":true,\\"error.$\\":\\"$.error.Error\\"' in definition
     from services.workflows.tasks import STEPS
 
     for step in STEPS:
