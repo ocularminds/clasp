@@ -21,9 +21,12 @@ rejects or doesn't answer, a Clasp supervisor decides.
 > a Truce on WhatsApp with a 20% partial refund (see [deployment status](docs/deployment-status.md)).
 > Those runs used the earlier flow, where the seller dispatched by WhatsApp. The autonomous flow (courier
 > dispatch, seller-then-supervisor approval, drift, settlement, the Decionis gateway in enforcement at
-> `clasp.decionisedge.com`) was deployed on 27 October and passes `make gateway-check`; no live order has run
-> through it yet. SMS and SES have production access. RCS is configured but untested on a supported handset. The
-> [runbook](demo/RUNBOOK.md) has the recording plan.
+> `clasp.decionisedge.com`) was deployed on 27 October. Its hosted gateway now runs AgentSafe **0.7.0** and
+> selects the published `clasp` policy. One synthetic $1 payment passed through enforcement and produced exactly
+> one HOLD; the signed dossier confirms the selected bundle (see [gateway verification](docs/gateway-verification-2026-10-27.md)).
+> A complete courier-to-Truce-to-settlement handset run on this flow remains unverified. SES has production access;
+> the latest SMS check still shows sandbox access and a $1 monthly limit, with the requested $25 ceiling pending.
+> RCS is configured but untested on a supported handset. The [runbook](demo/RUNBOOK.md) has the recording plan.
 
 ## The invariant
 
@@ -91,8 +94,8 @@ only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches
 * **On phones:** message the WhatsApp business number given on the Devpost page. With `AUTO_ENROL_CHANNELS=whatsapp`
   on the ingress Lambda, any new number is enrolled as a buyer on first contact, with its own Cognito identity. With
   `COURIER_MODE=auto`, the courier pickup is scanned as soon as the payment is held, so a judge can buy, pay, receive
-  the delivery code and open a Truce alone. SMS has production access; where a text can't be sent (the sender ID is
-  Swedish), the delivery code arrives in the WhatsApp chat instead. Give the assistant an email address to receive the receipt and
+  the delivery code and open a Truce alone. SMS still requires verified sandbox destinations; where a text can't
+  be sent, the delivery code arrives in the WhatsApp chat instead. Give the assistant an email address to receive the receipt and
   evidence pack. A request that escalates waits for the seller (the owner) or a supervisor to answer by email.
 * **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
   (HMAC-signed pickup scan; delivery is confirmed by the buyer's one-time code) and production-grade image forensics
