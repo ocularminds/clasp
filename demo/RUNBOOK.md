@@ -5,6 +5,12 @@ ignored `.env`; keep raw logs, codes, recordings and deployment responses in the
 `demo/deployment-state/` and `demo/recordings/` directories. See
 [deployment status](../docs/deployment-status.md) for what has actually been verified.
 
+The [27 October phone run](../docs/live-order-verification-2026-10-27.md) completed automatic courier pickup,
+WhatsApp delivery-code fallback, Truce, seller email approval, $36 store credit and $84 seller settlement on
+order `1cd7c4`. The published video still shows the separate 26 October partial-refund take. Supplemental stills
+capture the actual escalation email, approval result and Step Functions state; the 1080p frames label them as
+screens captured after completion.
+
 ## 1. Account and prerequisites
 
 Use Python 3.12, `uv`, and the Node version in `.node-version`. The CDK CLI is pinned by
@@ -90,11 +96,11 @@ access with a small Converse request. The default is the US inference profile
 
 ### SES production access and the SMS sandbox
 
-The live `us-east-1` account check on 27 October at 08:25 UTC confirmed SES production access and healthy
-sending. SMS still reported `SANDBOX` at 08:20 UTC, with both the enforced and maximum monthly text-message
-limits at $1. The owner-reported SMS approval and $25 limit have not yet appeared in the service configuration.
-Until the account tier changes, SMS recipients must be verified destinations. SES no longer requires recipient
-mailboxes to be verified.
+The live `us-east-1` account check on 27 October confirmed SES production access and healthy sending.
+SMS still reported `SANDBOX` at 20:01 UTC, with both the enforced and maximum monthly text-message limits
+at $1. The SES approval does not apply to SMS; its production-access and $25-limit request is still pending.
+The limit rejected sends even to verified demo destinations in the completed phone run. SES no longer requires
+recipient mailboxes to be verified.
 
 The SMS origination identity is the Swedish `CLASP` sender ID. Alphanumeric sender IDs are country-specific, and
 the US and Canada don't accept them, so a text to a non-Swedish judge's number is expected to fail until an
@@ -123,7 +129,9 @@ The request path is End User Messaging SMS console → **Overview** → the sand
 notice → **Request production access** (opens a Support Center case pre-filled for SMS). State the use case
 (one-time delivery codes and order alerts to order participants, Sweden, transactional, opt-in by placing an
 order), the expected volume (under 100 a day) and the sender (`CLASP` sender ID, long code pending). Until it is
-granted, verify each judge number instead:
+granted, a destination must be verified to receive sandbox SMS. Verification does not bypass the spend limit;
+the 27 October run hit the $1 limit even on a verified demo phone. These are the verification commands when
+SMS quota is available:
 
 ```bash
 aws pinpoint-sms-voice-v2 create-verified-destination-number --destination-phone-number "+46XXXXXXXXX"
@@ -131,8 +139,9 @@ aws pinpoint-sms-voice-v2 send-destination-number-verification-code --verified-d
 aws pinpoint-sms-voice-v2 verify-destination-number --verified-destination-number-id <id> --verification-code <code from the handset>
 ```
 
-Judges reach the agent on WhatsApp once `AUTO_ENROL_CHANNELS=whatsapp` is deployed. The SMS sandbox still gates
-delivery codes sent to unverified numbers; SES production access permits email receipts to unverified mailboxes.
+Judges reach the agent on WhatsApp with the deployed `AUTO_ENROL_CHANNELS=whatsapp`. Rejected delivery-code texts
+fall back to that chat; this was verified live on 27 October. SES production access permits email receipts to
+unverified mailboxes. Unknown-number WhatsApp enrolment still needs a real handset check.
 
 ## 2. Deploy, bind topics, and seed
 
@@ -318,16 +327,20 @@ Before recording:
   Clasp's side: the payment, payout or settlement simply doesn't happen. The request body carries `action`,
   `amount_minor`, `currency`, `evidence` and, on an approval, `context.approval_stage`, so a rule can tell these
   calls apart.
-- **Use a buyer identity that hasn't had a refund in 30 days.** Both seeded demo identities used their one refund on
+- **For a refund take, use a buyer identity that hasn't had a refund in 30 days.** Both seeded demo identities used their one refund on
   26 October, so a refund for them is denied for velocity. Message the business number from a third WhatsApp number:
   `AUTO_ENROL_CHANNELS=whatsapp` enrols it as a buyer on first contact. Give the assistant an email address in the
-  chat so the receipt and evidence pack reach a mailbox you can show.
+  chat so the receipt and evidence pack reach a mailbox you can show. Existing demo phones can exercise store
+  credit without resetting the refund history: the configured credit option is 30% ($36 on a $120 order).
 - **SMS.** The latest service check still shows `SANDBOX` and a $1 monthly limit. Use verified destinations until
   production access is reflected in the account, and check that the requested $25 ceiling has taken effect. If a
   send is refused, the code arrives in WhatsApp and seller notices by email. Narrate whichever channel actually
   carried each message.
-- Prepare the item (the camera bag or lens; the Zoom H6 is out of stock), paper for the challenge code, and a phone
-  to act as the courier.
+- **Stock:** the 20:01 UTC check on 27 October found five camera bags, five lenses, five tripods and four Zoom H6s.
+  Restocking preserved each item's seller. The current phone roles are swapped from the original local `.env`;
+  do not run `make seed` against that stale configuration. Do not reset prior orders or refund allowances.
+- Prepare the item, paper for the challenge code, and a phone to act as the courier. Supply a real pickup/reference
+  photo for a photo-comparison take; automatic pickup on `1cd7c4` had no reference photo, so its evidence escalated.
 
 Start the ingress and decision logs in separate terminals:
 
