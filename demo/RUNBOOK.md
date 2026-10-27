@@ -222,22 +222,70 @@ Before recording:
      `https://clasp.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
   3. Set its `upstreamCredential` to header `authorization` with the file contents `Bearer <value of
      clasp/dev/agentsafe-upstream-token>`. An enforcing gateway drops the agent's own value and sets this one.
-  4. Put the origin proof from `make upstream-proof TENANT=clasp ORG=<organization uuid>` in `.env` as
+  4. Name the route and give the tenant's policy a rule that approves Clasp's money actions. Without a matching
+     rule, Decionis holds every call for review: the first live hold on 27 October came back `202 ESCALATE` with
+     `PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`, and the checkout stayed unpaid. Add the gateway route
+
+     ```json
+     {"path": "/decide", "methods": ["POST"], "action": "clasp.decide"}
+     ```
+
+     and this rule to the tenant's policy bundle:
+
+     ```json
+     {
+       "rule_id": "clasp-decide-allow",
+       "name": "Clasp money decisions are decided by Clasp's policy service",
+       "decision_domain": "*",
+       "priority": 100,
+       "enabled": true,
+       "when": {"all": [
+         {"field": "transaction_type", "operator": "EQ", "value": "clasp.decide"},
+         {"field": "context.agent_safe.action.parameters.body.action", "operator": "IN",
+          "values": ["discount", "hold", "release", "refund", "credit", "replacement", "settle"]}
+       ]},
+       "then": {"action": "AUTO_APPROVE"},
+       "rationale": "Clasp's reference policy enforces caps, evidence, velocity and seller/supervisor approval, and signs the authorization."
+     }
+     ```
+
+     Why it has this shape:
+     - The gateway names a call by its route; with no route for `/decide` the name is `http.post`. That name is
+       the `transaction_type` the rule matches. Without the route, match `transaction_type` `EQ` `"http.post"`
+       and `context.agent_safe.action.parameters.path` `EQ` `"/decide"` instead.
+     - The intent's parameters are the HTTP call (`method`, `path`, `query`, `body`), so Decionis doesn't read
+       Clasp's `amount_minor` as an amount. Body fields are still reachable as rule facts under
+       `context.agent_safe.action.parameters.body`.
+     - Only `AUTO_APPROVE` yields ALLOW. With no matching rule the outcome is review, which the gateway answers
+       as `202 ESCALATE`.
+     - Don't use `ESCALATE` as the rule's action: that is Decionis-managed review, and a seller's approval sent
+       back through the gateway would be held again.
+     - Check the action name the gateway actually used in the held call's dossier. `make decisions` prints
+       `dossier=` with the first 8 characters of the dossier id that Clasp records with each gateway decision.
+     - Not yet confirmed against a live bundle: the `{"all": [...]}` grouping and `values` for `IN`. They are
+       taken from the Decionis policy core.
+  5. Put the origin proof from `make upstream-proof TENANT=clasp ORG=<organization uuid>` in `.env` as
      `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://clasp.decionisedge.com` and
      `AGENTSAFE_GATEWAY_MODE=enforcement`, and run `make deploy`. Clasp serves the proof at
      `/.well-known/agentsafe-upstream`.
-  5. Run `make gateway-check`, which reads the gateway's mode and relays one unevaluated GET with the tenant key.
-     `make gateway-check` doesn't send a decision, so it doesn't prove the upstream credential. Before recording,
-     run one throwaway order to `HELD` and confirm in `make decisions` that the hold shows engine
-     `decionis-gateway:enforcement`. If the checkout says the payment didn't go through, read the adapter's
-     `agentsafe.gateway_unavailable` log: `upstream HTTP 401` means the gateway's `upstreamCredential` doesn't
-     match `clasp/dev/agentsafe-upstream-token`. The same run warms the path, so the first take doesn't wait on
-     cold starts.
+  6. Run `make gateway-check`, which reads the gateway's mode and relays one unevaluated GET with the tenant key.
+     `make gateway-check` doesn't send a decision, so it proves neither the upstream credential nor the rule.
+     Before recording, run one throwaway order to `HELD` and confirm that `make decisions` shows the hold as
+     `allow    decionis  hold` with a `dossier=` id. `decionis` means the call came through the gateway; `reference`
+     would mean it was decided directly, which enforcement refuses. The same run warms the path, so the first take
+     doesn't wait on cold starts.
+     If the checkout says the payment didn't go through:
+     - a `decionis_escalate: …POLICY_MISMATCH` decision means no rule matched (step 4). The order stays unpaid
+       with no ledger entry; press Pay again once the rule is in place;
+     - an `agentsafe.gateway_unavailable` log with `upstream HTTP 401` means the gateway's `upstreamCredential`
+       doesn't match `clasp/dev/agentsafe-upstream-token` (step 3).
 
   The tenant's Decionis policy should allow or block Clasp's `POST /decide` calls and leave human review to Clasp.
-  A call it holds (`202 ESCALATE`) becomes a Clasp escalation, but the same call made again after the seller
-  approves would be held again. The request body carries `action`, `amount_minor`, `currency`, `evidence` and,
-  on an approval, `context.approval_stage`, so the policy can tell these calls apart.
+  A held Truce request (refund, credit, replacement) becomes a Clasp escalation to the seller, but the same call
+  made again after the seller approves would be held again. A held hold, release or settle has no reviewer on
+  Clasp's side: the payment, payout or settlement simply doesn't happen. The request body carries `action`,
+  `amount_minor`, `currency`, `evidence` and, on an approval, `context.approval_stage`, so a rule can tell these
+  calls apart.
 - **Use a buyer identity that hasn't had a refund in 30 days.** Both seeded demo identities used their one refund on
   26 October, so a refund for them is denied for velocity. Message the business number from a third WhatsApp number:
   `AUTO_ENROL_CHANNELS=whatsapp` enrols it as a buyer on first contact. Give the assistant an email address in the

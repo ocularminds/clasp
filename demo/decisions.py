@@ -19,8 +19,12 @@ COLOUR = {"allow": "32", "deny": "31", "escalate": "33"}
 def render(d: dict) -> str:
     ts = time.strftime("%H:%M:%S", time.gmtime(int(str(d["ts"])[:12])))
     amount = fmt(int(d["amount_minor"]), d.get("currency", "USD")) if str(d.get("amount_minor", "")).lstrip("-").isdigit() else str(d.get("amount_minor"))
-    return (f"{ts} \033[{COLOUR.get(d['decision'], '0')}m{d['decision']:<8}\033[0m {d['action']:<11} {amount:>10}  "
-            f"{d.get('order_id', '-')[-8:]}  actor={str(d.get('actor_sub', ''))[:14]:<14} {d['reason'][:80]}")
+    # "decionis": through the hosted gateway (its dossier id is recorded); "reference": decided directly.
+    via = "decionis" if str(d.get("engine", "")).startswith("decionis") else "reference"
+    dossier = ((d.get("context") or {}).get("decionis") or {}).get("dossier_id")
+    return (f"{ts} \033[{COLOUR.get(d['decision'], '0')}m{d['decision']:<8}\033[0m {via:<9} {d['action']:<11} {amount:>10}  "
+            f"{d.get('order_id', '-')[-8:]}  actor={str(d.get('actor_sub', ''))[:14]:<14} {d['reason'][:80]}"
+            + (f"  dossier={dossier[:8]}" if dossier else ""))
 
 
 def main() -> int:
@@ -31,7 +35,7 @@ def main() -> int:
     stores = get_stores()
     seen: set[str] = set()
     since = clock.now() - args.since
-    print(f"{'time':<8} {'decision':<8} {'action':<11} {'amount':>10}  order     actor          reason")
+    print(f"{'time':<8} {'decision':<8} {'via':<9} {'action':<11} {'amount':>10}  order     actor          reason")
     while True:
         for d in stores.decisions_since(since, limit=200):
             if d["decision_id"] in seen:
