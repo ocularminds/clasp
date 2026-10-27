@@ -88,18 +88,20 @@ For the Anthropic model in `BEDROCK_MODEL_ID`, complete the Bedrock first-use fo
 access with a small Converse request. The default is the US inference profile
 `us.anthropic.claude-sonnet-4-5-20250929-v1:0`; use the same model for evidence in this demo.
 
-### Leaving the SES and SMS sandboxes (done)
+### SES production access and the SMS sandbox
 
-Both are out of their sandboxes: SES production access was granted on 26 October, and SMS production access
-on 27 October with a $25 monthly spending limit. Unverified numbers and mailboxes now receive Clasp's texts and
-email. The commands below are kept as a record of how it was done.
+The live `us-east-1` account check on 27 October at 08:25 UTC confirmed SES production access and healthy
+sending. SMS still reported `SANDBOX` at 08:20 UTC, with both the enforced and maximum monthly text-message
+limits at $1. The owner-reported SMS approval and $25 limit have not yet appeared in the service configuration.
+Until the account tier changes, SMS recipients must be verified destinations. SES no longer requires recipient
+mailboxes to be verified.
 
 The SMS origination identity is the Swedish `CLASP` sender ID. Alphanumeric sender IDs are country-specific, and
 the US and Canada don't accept them, so a text to a non-Swedish judge's number is expected to fail until an
 origination identity for that country is in the pool. When an SMS send is refused, the buyer's delivery code
 goes to their WhatsApp chat instead, and seller notices go by email.
 
-SES production access is one API call:
+The SES production-access request and status check are retained here for reference:
 
 ```bash
 aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIONAL \
@@ -109,7 +111,15 @@ aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIO
 aws sesv2 get-account --query '{production:ProductionAccessEnabled,status:EnforcementStatus}'
 ```
 
-SMS production access is a Support request: End User Messaging SMS console → **Overview** → the sandbox
+Check the SMS tier and limits before relying on production access:
+
+```bash
+aws pinpoint-sms-voice-v2 describe-account-attributes --region us-east-1
+aws pinpoint-sms-voice-v2 describe-spend-limits --region us-east-1
+```
+
+The SMS production-access and $25/month requests are already filed in Support case `179305047100524`.
+The request path is End User Messaging SMS console → **Overview** → the sandbox
 notice → **Request production access** (opens a Support Center case pre-filled for SMS). State the use case
 (one-time delivery codes and order alerts to order participants, Sweden, transactional, opt-in by placing an
 order), the expected volume (under 100 a day) and the sender (`CLASP` sender ID, long code pending). Until it is
@@ -121,8 +131,8 @@ aws pinpoint-sms-voice-v2 send-destination-number-verification-code --verified-d
 aws pinpoint-sms-voice-v2 verify-destination-number --verified-destination-number-id <id> --verification-code <code from the handset>
 ```
 
-Judges reach the agent on WhatsApp without any of this once `AUTO_ENROL_CHANNELS=whatsapp` is deployed; the
-sandboxes only gate the SMS delivery code and the email receipts for numbers and mailboxes we have not verified.
+Judges reach the agent on WhatsApp once `AUTO_ENROL_CHANNELS=whatsapp` is deployed. The SMS sandbox still gates
+delivery codes sent to unverified numbers; SES production access permits email receipts to unverified mailboxes.
 
 ## 2. Deploy, bind topics, and seed
 
@@ -290,9 +300,10 @@ Before recording:
   26 October, so a refund for them is denied for velocity. Message the business number from a third WhatsApp number:
   `AUTO_ENROL_CHANNELS=whatsapp` enrols it as a buyer on first contact. Give the assistant an email address in the
   chat so the receipt and evidence pack reach a mailbox you can show.
-- **SMS.** Production access is granted with a $25 monthly limit, so the delivery code reaches any Swedish number
-  by text. If a send is refused (another country, or the limit), the code arrives in WhatsApp and seller notices by
-  email. Narrate whichever channel actually carried each message.
+- **SMS.** The latest service check still shows `SANDBOX` and a $1 monthly limit. Use verified destinations until
+  production access is reflected in the account, and check that the requested $25 ceiling has taken effect. If a
+  send is refused, the code arrives in WhatsApp and seller notices by email. Narrate whichever channel actually
+  carried each message.
 - Prepare the item (the camera bag or lens; the Zoom H6 is out of stock), paper for the challenge code, and a phone
   to act as the courier.
 
