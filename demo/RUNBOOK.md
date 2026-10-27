@@ -7,9 +7,9 @@ ignored `.env`; keep raw logs, codes, recordings and deployment responses in the
 
 The [27 October phone run](../docs/live-order-verification-2026-10-27.md) completed automatic courier pickup,
 WhatsApp delivery-code fallback, Truce, seller email approval, $36 store credit and $84 seller settlement on
-order `1cd7c4`. The published video still shows the separate 26 October partial-refund take. Capture the actual
-approval email, confirmation result and Step Functions state for supplemental evidence; label screens taken
-after completion accordingly.
+order `1cd7c4`. The published video still shows the separate 26 October partial-refund take. Supplemental stills
+capture the actual escalation email, approval result and Step Functions state; the 1080p frames label them as
+screens captured after completion.
 
 ## 1. Account and prerequisites
 
