@@ -1,43 +1,50 @@
-"""Keep demo SMS useful in one segment and follow an active WhatsApp dispatch chat."""
+"""Seller notices are one-way and fit one SMS segment; every notice survives a failing channel."""
 from __future__ import annotations
 
-import pytest
-
-from services.common import clock
 from services.notify.router import MemoryNotifier
 from services.workflows import tasks
 
+GSM7 = set("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿"
+           "abcdefghijklmnopqrstuvwxyzäöñüà")
 
-def test_hold_and_delivery_sms_fit_one_segment(make_order, monkeypatch):
+
+def one_segment(text: str) -> bool:
+    return all(c in GSM7 for c in text) and len(text) <= 160
+
+
+def test_seller_and_buyer_sms_fit_one_segment(make_order, monkeypatch):
     outbox = MemoryNotifier()
     monkeypatch.setattr(tasks.notify, "get_notifier", lambda: outbox)
     order = make_order(status="HELD", amount=10800)
-    tasks.notify_seller_funds_held(order["order_id"])
+    tasks.book_courier(order["order_id"])
     held = outbox.last("rcs").fallback_text
-    assert held.isascii() and len(held) <= 160
-    assert "$108.00" in held and "simulation" in held and order["order_id"][-6:] in held
-    assert "WhatsApp" in held and "photo" in held
+    assert one_segment(held) and "$108.00" in held and "test mode" in held and order["order_id"][-6:] in held
+    assert "No reply needed" in held and "photo" not in held  # the seller is told, not asked
 
     tasks.send_delivery_code(order["order_id"])
     delivery = outbox.last("sms").text
-    assert delivery.isascii() and len(delivery) <= 160
-    assert "releases the seller's payout" in delivery
+    assert one_segment(delivery) and "only once you have the item" in delivery
+
+    shipped = make_order(status="DISPATCHED", amount=10800)
+    tasks.mark_disputed(shipped["order_id"], {"reason": "Battery cover damaged"})
+    truce = outbox.last("rcs")
+    assert truce.to == order["seller_phone"] and one_segment(truce.fallback_text) and "Nothing to do yet" in truce.fallback_text
 
 
-@pytest.mark.parametrize("photo_key,age,expected_channel", [
-    ("inbound/15550000002/photo", 60, "whatsapp"),
-    ("inbound/15550000002/photo", 24 * 3600, "rcs"),
-    ("inbound/rcs/message/photo", 60, "rcs"),
-    ("dispatch/legacy.jpg", 60, "rcs"),
-])
-def test_truce_uses_recent_dispatch_conversation(make_order, stores, monkeypatch, photo_key, age, expected_channel):
-    outbox = MemoryNotifier()
+def test_a_failing_channel_falls_through_to_the_next(make_order, stores, monkeypatch):
+    class FlakyNotifier(MemoryNotifier):
+        def send(self, msg):
+            if msg.channel in {"rcs", "sms"}:
+                raise RuntimeError("sandbox spend limit reached")
+            return super().send(msg)
+
+    outbox = FlakyNotifier()
     monkeypatch.setattr(tasks.notify, "get_notifier", lambda: outbox)
-    order = make_order(status="DISPATCHED", dispatch_photo_key=photo_key, dispatched_at=clock.now() - age)
+    order = make_order(status="DISPATCHED", amount=10800)
     tasks.mark_disputed(order["order_id"], {"reason": "Battery cover damaged"})
-    message = outbox.last()
-    assert message.channel == expected_channel
-    assert message.to == order["seller_phone"] and "Truce" in message.text
-    final = stores.get_order(order["order_id"])
-    assert final["status"] == "DISPUTED"
-    assert final["held_minor"] == order["held_minor"] and final["refunded_minor"] == 0
+    assert outbox.last().channel == "email" and outbox.last().to == "seller@example.com"  # seller notice by email instead
+    out = tasks.send_delivery_code(order["order_id"])
+    assert out["channel"] == "whatsapp" and "delivery code" in outbox.last("whatsapp").text  # buyer code by WhatsApp
+    notices = stores.get_order(order["order_id"])["notices"]
+    assert [n["channel"] for n in notices] == ["email", "whatsapp"]
+    assert stores.get_order(order["order_id"])["status"] == "DISPUTED"  # the order kept moving

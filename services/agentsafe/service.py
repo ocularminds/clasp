@@ -1,7 +1,7 @@
 """Reference AgentSafe policy service. Same contract as Decionis AgentSafe:
 
 POST /decide {action, order_id, amount_minor, currency, actor_sub, evidence, context}
- -> {decision: allow|deny|escalate, reason, decision_id, authorization?}
+ -> {decision: allow|deny|escalate, reason, message, decision_id, authorization?}
 
 An `allow` carries a compact JWS (ES256, KMS-signed) that the executor demands.
 """
@@ -14,7 +14,7 @@ from ..common import clock
 from ..common.ids import new_id, new_nonce
 from ..common.log import Log
 from . import jws
-from .policy import ALLOW, DENY, ESCALATE, Policy, evaluate
+from .policy import ALLOW, DENY, ESCALATE, TRUCE_ACTIONS, Policy, describe, evaluate
 from .signer import ALG, Signer, Verifier
 
 log = Log("agentsafe")
@@ -60,6 +60,8 @@ class Decision:
     authorization: str | None = None
     checks: list[str] = field(default_factory=list)
     expires_at: int | None = None
+    message: str = ""
+    engine: str = "reference"
 
     @property
     def allowed(self) -> bool:
@@ -76,7 +78,8 @@ class Decision:
         return cls(
             decision=d["decision"], reason=d.get("reason", ""), decision_id=d.get("decision_id", ""),
             policy_version=d.get("policy_version", ""), authorization=d.get("authorization"),
-            checks=list(d.get("checks") or []), expires_at=d.get("expires_at"),
+            checks=list(d.get("checks") or []), expires_at=d.get("expires_at"), message=d.get("message", ""),
+            engine=d.get("engine", "reference"),
         )
 
 
@@ -89,18 +92,20 @@ class AgentSafeService:
 
     # -- approvals -----------------------------------------------------------
     def mint_approval_link_token(self, order_id: str, decision_id: str, amount_minor: int, currency: str,
-                                 approver: str, verdict: str) -> str:
+                                 approver: str, verdict: str, stage: str = "supervisor") -> str:
         now = clock.now()
         claims = {
             "typ": "approval", "order_id": order_id, "decision_id": decision_id, "amount_minor": amount_minor,
-            "currency": currency, "approver": approver, "approved": verdict == "approve",
-            "nonce": new_nonce(), "iat": now, "exp": now + self.policy.approval_link_ttl,
+            "currency": currency, "approver": approver, "approved": verdict == "approve", "stage": stage,
+            "nonce": new_nonce(), "iat": now, "exp": now + self.policy.stage(stage)["ttl_seconds"],
         }
         return jws.encode({"alg": ALG, "typ": "JWT", "kid": self.signer.kid}, claims, self.signer.sign)
 
-    def approval_links(self, order_id: str, decision_id: str, amount_minor: int, currency: str, approver: str) -> dict:
-        return {"approve": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "approve"),
-                "reject": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "reject")}
+    def approval_links(self, order_id: str, decision_id: str, amount_minor: int, currency: str, approver: str,
+                       stage: str = "supervisor") -> dict:
+        return {"approve": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "approve", stage),
+                "reject": self.mint_approval_link_token(order_id, decision_id, amount_minor, currency, approver, "reject", stage),
+                "stage": stage, "expires_in_seconds": self.policy.stage(stage)["ttl_seconds"]}
 
     @staticmethod
     def read_approval_token(token: str | None, verifier: Verifier | None) -> dict | None:
@@ -131,9 +136,25 @@ class AgentSafeService:
         prior = [d for d in self.stores.decisions_for_order(req.order_id) if d.get("decision_id") == claims.get("decision_id")]
         if not prior or prior[0].get("decision") != ESCALATE:
             return None
+        order = self.stores.get_order(req.order_id) or {}
+        current = (order.get("escalation") or {}).get("stage")
+        if current and str(claims.get("stage") or "supervisor") != current:  # a seller link is dead once a supervisor decides
+            return None
         return claims
 
     # -- the decision --------------------------------------------------------
+    def signals(self, order: dict | None) -> dict:
+        """Facts from our own records that drift checks need. Never taken from the caller.
+        Only Truce denials count as pressure: a declined discount while buying is ordinary negotiation, and a denial
+        because the Decionis gateway could not answer says nothing about the buyer."""
+        if not order:
+            return {}
+        decisions = self.stores.decisions_for_order(order["order_id"])
+        hold = next((e for e in self.stores.ledger_entries(order["order_id"]) if e.get("type") == "HOLD"), None)
+        return {"denials_on_order": sum(1 for d in decisions if d.get("decision") == DENY and d.get("action") in TRUCE_ACTIONS
+                                        and not str(d.get("reason", "")).startswith("decionis_unavailable")),
+                "hold_policy_version": (hold or {}).get("policy_version")}
+
     def decide(self, req: DecideRequest) -> Decision:
         now = clock.now()
         clog = log.bind(correlation_id=req.correlation_id or None, order_id=req.order_id, action=req.action)
@@ -144,7 +165,10 @@ class AgentSafeService:
             window = int(rules["velocity"].get("window_days", 30)) * 86400
             prior_refunds = self.stores.count_refunds_for_buyer(order.get("buyer_sub", ""), now - window)
         approval = self.verify_approval_token(req.context.get("approval_token"), req)
-        outcome, reason, checks = evaluate(self.policy, req.to_dict(), order, prior_refunds, approval, now)
+        signals = self.signals(order)
+        outcome, reason, checks = evaluate(self.policy, req.to_dict(), order, prior_refunds, approval, now, signals)
+        message = describe(self.policy, outcome, reason, req.to_dict(), order)
+        engine = "decionis-gateway" if req.context.get("decionis") else "reference"
 
         decision_id = new_id("dec")
         authorization = None
@@ -163,6 +187,7 @@ class AgentSafeService:
             "decision_id": decision_id, "order_id": req.order_id or "-", "action": req.action,
             "amount_minor": req.amount_minor if isinstance(req.amount_minor, int) else str(req.amount_minor),
             "currency": req.currency.upper(), "actor_sub": req.actor_sub, "decision": outcome, "reason": reason,
+            "message": message, "signals": signals, "engine": engine,
             "checks": checks, "policy_version": self.policy.version, "evidence": req.evidence,
             "context": {k: v for k, v in req.context.items() if k != "approval_token"},
             "correlation_id": req.correlation_id, "ts": str(now).zfill(12),
@@ -174,7 +199,29 @@ class AgentSafeService:
             amount_minor=req.amount_minor, currency=req.currency, actor_sub=req.actor_sub, checks=checks,
         )
         return Decision(decision=outcome, reason=reason, decision_id=decision_id, policy_version=self.policy.version,
-                        authorization=authorization, checks=checks, expires_at=expires_at)
+                        authorization=authorization, checks=checks, expires_at=expires_at, message=message, engine=engine)
+
+    def record_external(self, req: DecideRequest, outcome: str, reason: str, engine: str, refs: dict) -> Decision:
+        """Log a decision made upstream of us (the Decionis gateway blocked or held the call), so the
+        decision log, drift signals and evidence pack stay complete. Never mints an authorization."""
+        if outcome not in {DENY, ESCALATE}:
+            raise ValueError("only denials and escalations can be recorded from outside")
+        now = clock.now()
+        order = self.stores.get_order(req.order_id) if req.order_id else None
+        message = describe(self.policy, outcome, reason, req.to_dict(), order)
+        decision_id = new_id("dec")
+        self.stores.put_decision({
+            "decision_id": decision_id, "order_id": req.order_id or "-", "action": req.action,
+            "amount_minor": req.amount_minor if isinstance(req.amount_minor, int) else str(req.amount_minor),
+            "currency": req.currency.upper(), "actor_sub": req.actor_sub, "decision": outcome, "reason": reason,
+            "message": message, "engine": engine, "checks": [f"EXTERNAL {engine}"], "policy_version": self.policy.version,
+            "evidence": req.evidence, "context": {**{k: v for k, v in req.context.items() if k != "approval_token"}, "decionis": refs},
+            "correlation_id": req.correlation_id, "ts": str(now).zfill(12), "authorization_expires_at": None,
+        })
+        log.warn("agentsafe.decision", decision=outcome, reason=reason, decision_id=decision_id, engine=engine,
+                 order_id=req.order_id, correlation_id=req.correlation_id or None)
+        return Decision(decision=outcome, reason=reason, decision_id=decision_id, policy_version=self.policy.version,
+                        message=message, engine=engine)
 
 
 _service: AgentSafeService | None = None

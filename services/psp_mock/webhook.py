@@ -42,4 +42,6 @@ def handle_webhook(body: bytes, headers: dict[str, str]) -> tuple[int, dict]:
         evidence={"psp_verified": True, "psp_event_id": event["id"]},
         metadata={"psp_event_id": event["id"], "last4": data.get("last4")}, correlation_id=corr,
     )
+    if str(result.get("reason", "")).startswith("decionis_unavailable"):
+        return 503, {"order_id": order["order_id"], "retry": True, **result}  # the provider retries; nothing was held
     return 200, {"order_id": order["order_id"], **result}

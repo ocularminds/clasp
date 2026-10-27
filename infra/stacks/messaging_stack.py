@@ -70,6 +70,9 @@ class MessagingStack(Stack):
             resources=[data.user_pool.user_pool_arn]))
         self.ingress.add_to_role_policy(iam.PolicyStatement(actions=["dynamodb:PutItem", "dynamodb:UpdateItem"],
                                                             resources=[data.tables["parties"].table_arn]))
+        # Marks workflow notices as seen once they are handed to the agent (order metadata only, never money).
+        self.ingress.add_to_role_policy(iam.PolicyStatement(actions=["dynamodb:UpdateItem"],
+                                                            resources=[data.tables["orders"].table_arn]))
         self.ingress.add_to_role_policy(iam.PolicyStatement(
             actions=MESSAGING_ACTIONS + ["social-messaging:GetWhatsAppMessageMedia", "ssm:GetParameter"], resources=["*"]))
         # IAM Policy Autopilot maps the user-bound call to both permissions.

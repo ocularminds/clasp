@@ -62,9 +62,9 @@ def architecture() -> None:
             d.text((lx, ly), label, font=font(21), fill=MUTED)
 
     card((70, 215, 580, 350), "Buyer / WhatsApp", ["AWS End User Messaging Social"])
-    card((625, 215, 1175, 350), "Seller / RCS", ["AWS End User Messaging SMS + RCS"])
+    card((625, 215, 1175, 350), "Seller / RCS + SMS", ["One-way notices · no chat needed"])
     card((1220, 215, 1710, 350), "Delivery / SMS", ["One-time delivery code"])
-    card((1755, 215, 2330, 350), "Supervisor + parties / SES", ["Approval links, receipts, evidence"])
+    card((1755, 215, 2330, 350), "Seller → supervisor / SES", ["Signed approvals, receipts, evidence"])
 
     d.rounded_rectangle((50, 385, 2350, 1470), radius=28, outline="#cad8dc", width=2)
     d.text((82, 404), "CLASP APPLICATION", font=font(19, True), fill=MUTED)
@@ -86,24 +86,24 @@ def architecture() -> None:
     arrow([(1100, 971), (1175, 971)])
     card((1175, 890, 1575, 1065), "Tools Lambda", ["Stock, orders, evidence", "Money actions are proposals"])
 
-    card((1175, 455, 1575, 660), "HTTP API + Lambda", ["Hosted demo checkout", "HMAC-signed PSP webhook", "Signed email approval links"])
+    card((1175, 455, 1575, 660), "HTTP API + Lambda", ["Checkout + signed PSP webhook", "Signed courier pickup scan", "Approval confirm pages"])
     arrow([(1575, 550), (1600, 550), (1600, 710), (1660, 710)])
-    card((1660, 645, 2280, 810), "AgentSafe policy Lambda", ["Allow / deny / escalate", "KMS-signed ES256 authorization"], border="#8cbbb0")
+    card((1660, 640, 2280, 840), "Decionis AgentSafe", ["Enforcing gateway → policy Lambda", "Allow / deny / escalate on drift", "KMS-signed ES256 authorization"], border="#8cbbb0")
     arrow([(1575, 952), (1610, 952), (1610, 764), (1660, 764)])
-    arrow([(1970, 810), (1970, 880)], color=TEAL)
+    arrow([(1970, 840), (1970, 880)], color=TEAL)
     card((1660, 880, 2280, 1055), "Executor Lambda", ["Verify signature, scope, TTL, nonce", "Only role allowed to append the ledger"], border="#8cbbb0")
 
-    arrow([(1375, 1065), (1375, 1150)])
-    card((1175, 1150, 1575, 1320), "AWS Step Functions", ["Wait for payment / dispatch", "Delivery / dispute / approval"])
+    arrow([(1375, 1065), (1375, 1135)])
+    card((1175, 1135, 1575, 1345), "AWS Step Functions", ["Payment → courier → delivery", "Truce → seller → supervisor", "Settle the rest to the seller"])
     arrow([(1970, 1055), (1970, 1120)], color=TEAL)
-    card((1660, 1120, 2280, 1305), "Data + evidence", ["DynamoDB orders, ledger, decisions", "S3 dispatch photos + evidence", "KMS signing key"], border="#8cbbb0")
+    card((1660, 1120, 2280, 1305), "Data + evidence", ["DynamoDB orders, ledger, decisions", "S3 pickup photos + evidence", "KMS signing key"], border="#8cbbb0")
     arrow([(1660, 1015), (1604, 1015), (1604, 1235), (1575, 1235)], color=TEAL)
 
     card((90, 1150, 1100, 1340), "Evidence is input; policy controls execution", ["A photo or prompt cannot sign an authorization.", "Payment screenshots cannot confirm funds.", "Cloud resources shown here come from the CDK source."], color="#edf1f4")
-    arrow([(1375, 1320), (1375, 1380)])
+    arrow([(1375, 1345), (1375, 1380)])
     d.rounded_rectangle((90, 1380, 2280, 1440), radius=16, fill="#e0eeeb")
-    d.text((119, 1397), "Workflow notifications  →  RCS seller  ·  WhatsApp buyer  ·  SMS delivery code  ·  SES approvals and receipts", font=font(27), fill=TEAL)
-    d.text((75, 1505), "Architecture from source · AgentSafe reference implementation · PSP is simulated; messaging and model services are real when configured.", font=font(25), fill=MUTED)
+    d.text((119, 1397), "Workflow notices  →  WhatsApp buyer  ·  RCS/SMS seller (one-way)  ·  SMS delivery code  ·  SES approvals + evidence", font=font(27), fill=TEAL)
+    d.text((75, 1505), "Architecture from source · Decionis AgentSafe gateway in enforcement, fails closed · PSP and courier simulated; messaging and models real.", font=font(25), fill=MUTED)
     im.save(OUT / "architecture.png", optimize=True)
 
 

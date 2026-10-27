@@ -49,18 +49,29 @@ def checkout_url(checkout_id: str) -> str:
     return f"{settings.api_base_url}/pay/{checkout_id}"
 
 
+def _back_to_chat() -> str:
+    number = (settings.whatsapp_business_number or "").lstrip("+")
+    if number.isdigit():
+        return f"<p><a class='btn' href='https://wa.me/{number}'>Return to WhatsApp</a></p>"
+    return "<p>You can close this page and return to your chat with Clasp.</p>"
+
+
 def render_page(order: dict | None, paid: bool = False, error: str | None = None) -> str:
     if order is None:
         return _page("Checkout not found", "<p>This payment link is invalid or has expired.</p>")
     amount = fmt(int(order["amount_minor"]), order["currency"])
     item = html.escape(order.get("item_name", "item"))
+    code = html.escape(order["order_id"][-6:])
     if paid or order.get("status") not in {"PAYMENT_PENDING", "DRAFT"}:
-        return _page("Payment received", f"<p class='ok'>✔ {amount} received for <b>{item}</b>.</p>"
-                                         "<p>The seller is paid only after you confirm delivery. Back to the chat.</p>")
-    err = f"<p class='err'>{html.escape(error)}</p>" if error else ""
+        return _page("Payment confirmed", f"<p class='ok'>✔ {amount} for <b>{item}</b> is held by Clasp (order {code}).</p>"
+                                          "<p>The seller is paid only when you confirm delivery with the one-time code we text you. "
+                                          "If anything is wrong when it arrives, tell Clasp before you share the code.</p>"
+                                          + _back_to_chat())
+    err = ("<p class='err'>The payment didn't go through. Please try again, or return to the chat for help.</p>"
+           if error else "")
     body = f"""
       <p>Pay <b>{amount}</b> for <b>{item}</b></p>
-      <p class='muted'>Order {html.escape(order['order_id'])} · funds are held until delivery is confirmed</p>
+      <p class='muted'>Order {code} · Clasp holds your payment until you confirm delivery</p>
       {err}
       <form method='post'>
         <label>Card number <input value='4242 4242 4242 4242' readonly></label>
@@ -68,8 +79,8 @@ def render_page(order: dict | None, paid: bool = False, error: str | None = None
         <label>CVC <input value='123' readonly></label>
         <button type='submit'>Pay {amount}</button>
       </form>
-      <p class='muted'>Mock provider. Pressing Pay sends an HMAC-signed webhook to Clasp. No real card is charged.</p>"""
-    return _page("Clasp secure checkout", body)
+      <p class='muted'>Test mode: no card is charged. Pressing Pay sends the payment provider's signed confirmation to Clasp.</p>"""
+    return _page("Clasp checkout (test mode)", body)
 
 
 def _page(title: str, body: str) -> str:
@@ -79,4 +90,5 @@ body{{font-family:-apple-system,system-ui,sans-serif;max-width:420px;margin:40px
 h1{{font-size:20px}} label{{display:block;margin:10px 0;font-size:14px}} input{{display:block;width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;background:#fff}}
 button{{width:100%;padding:14px;border:0;border-radius:10px;background:#111;color:#fff;font-size:16px;margin-top:12px}}
 .muted{{color:#666;font-size:13px}} .ok{{color:#0a7d3e;font-size:18px}} .err{{color:#b00020}}
+.btn{{display:block;text-align:center;padding:14px;border-radius:10px;background:#25d366;color:#fff;text-decoration:none;font-size:16px}}
 </style></head><body><h1>🔒 {html.escape(title)}</h1>{body}</body></html>"""

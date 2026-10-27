@@ -4,18 +4,27 @@ from __future__ import annotations
 
 import boto3
 
-from services.agent.prompt import SYSTEM_PROMPT
+from services.agent.prompt import SYSTEM_PROMPT as _RAW_PROMPT
 from tests.conftest import REGION
+
+SYSTEM_PROMPT = " ".join(_RAW_PROMPT.split())  # line wrapping is not meaning
 
 
 def test_prompt_directs_the_model_to_submit_any_requested_amount():
-    truce = SYSTEM_PROMPT[SYSTEM_PROMPT.index("Truce (disputes)"):SYSTEM_PROMPT.index("Sellers:")]
+    truce = SYSTEM_PROMPT[SYSTEM_PROMPT.index("Truce (disputes)"):SYSTEM_PROMPT.index("Sellers who write")]
     assert "ALWAYS submit exactly that amount with propose_refund" in truce
     assert "Never refuse to submit a proposal on your own judgement" in truce
     assert "you may propose it" not in truce
-    assert "Never retry a denied amount" in truce
-    sellers = SYSTEM_PROMPT[SYSTEM_PROMPT.index("Sellers:"):]
-    assert "short code" in sellers and "needs no reference" in sellers
+    assert "never retry the same amount" in SYSTEM_PROMPT
+    assert "gone to the seller for approval" in truce
+
+
+def test_prompt_keeps_sellers_out_of_the_chat_loop():
+    sellers = SYSTEM_PROMPT[SYSTEM_PROMPT.index("Sellers who write"):SYSTEM_PROMPT.index("Style:")]
+    assert "do not need to record dispatch" in sellers and "never approve, reject or promise" in sellers
+    assert "record_dispatch" not in SYSTEM_PROMPT and "notify_party" not in SYSTEM_PROMPT
+    assert "relay it" in SYSTEM_PROMPT.lower() and "resend_delivery_code" in SYSTEM_PROMPT and "save_email" in SYSTEM_PROMPT
+    assert "language the person writes in" in SYSTEM_PROMPT
 
 
 def test_auto_enrol_creates_one_cognito_identity_per_phone(stores, aws, monkeypatch):

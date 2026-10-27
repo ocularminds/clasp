@@ -41,14 +41,18 @@ def test_state_machine_mirrors_local_runner(templates):
     sm = templates["workflow"].find_resources("AWS::StepFunctions::StateMachine")
     assert len(sm) == 1
     definition = json.dumps(next(iter(sm.values()))["Properties"]["DefinitionString"])
-    for state in ("PaymentPending", "FundsHeld", "NotifySellerFundsHeld", "AwaitDispatch", "MarkDispatched", "SendDeliveryCode",
+    for state in ("PaymentPending", "FundsHeld", "BookCourier", "AwaitDispatch", "MarkDispatched", "SendDeliveryCode",
                   "AwaitDelivery", "DeliveryOutcome", "SendReceipts", "Released", "MarkDisputed", "AwaitResolution",
-                  "DisputeOutcome", "SendEvidencePack", "Resolved", "MarkEscalated", "SendApprovalEmail", "AwaitApproval",
+                  "DisputeOutcome", "SettleRemainder", "SendEvidencePack", "AfterResolution", "Resolved", "MarkEscalated",
+                  "SendApprovalEmail", "AwaitSellerApproval", "NextApprovalStage", "AwaitSupervisorApproval", "NotifyOutcome",
                   "MarkDisputedAfterRejection"):
         assert state in definition, state
-    assert "waitForTaskToken" in definition and "ApprovalRejected" in definition
-    for step in ("register_token", "notify_seller_funds_held", "mark_dispatched", "send_delivery_code", "send_receipts",
-                 "mark_disputed", "mark_escalated", "send_approval_email", "send_evidence_pack"):
+    assert "waitForTaskToken" in definition and "ApprovalRejected" in definition and "ApprovalRejectedFinal" in definition
+    assert "States.Timeout" in definition  # seller silence moves the decision on
+    assert "DecionisUnavailable" in definition  # an unanswered enforcing gateway is retried, not skipped
+    from services.workflows.tasks import STEPS
+
+    for step in STEPS:
         assert step in definition, step
 
 
@@ -115,7 +119,9 @@ def test_agent_stack_wires_gateway_memory_guardrail(templates):
 def test_api_routes(templates):
     api = templates["api"]
     routes = {r["Properties"]["RouteKey"] for r in api.find_resources("AWS::ApiGatewayV2::Route").values()}
-    assert routes == {"GET /pay/{checkout_id}", "POST /pay/{checkout_id}", "POST /webhooks/psp", "GET /approvals"}
+    assert routes == {"GET /pay/{checkout_id}", "POST /pay/{checkout_id}", "POST /webhooks/psp", "GET /approvals",
+                      "POST /approvals", "GET /courier/{order_id}/{shipment_id}", "POST /courier/{order_id}/{shipment_id}",
+                      "POST /webhooks/courier", "POST /decide", "GET /.well-known/agentsafe-upstream"}
     templates["messaging"].resource_count_is("AWS::SNS::Topic", 2)
 
 

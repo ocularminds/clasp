@@ -23,8 +23,8 @@ def propose(action: str, *, order_id: str, amount_minor: int, currency: str, act
                                 correlation_id=correlation_id)
     out: dict[str, Any] = {
         "action": action, "order_id": order_id, "amount": fmt(amount_minor, currency), "amount_minor": amount_minor,
-        "currency": currency, "decision": decision.decision, "reason": decision.reason, "decision_id": decision.decision_id,
-        "policy_version": decision.policy_version,
+        "currency": currency, "decision": decision.decision, "reason": decision.reason, "message": decision.message,
+        "decision_id": decision.decision_id, "policy_version": decision.policy_version,
     }
     if decision.decision != "allow":
         log.info("proposal.not_executed", action=action, order_id=order_id, decision=decision.decision,

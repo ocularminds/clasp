@@ -40,17 +40,33 @@ class LocalDriver(_Base):
             return
         order, phase = found
         tasks.clear_token(order["order_id"], phase)
-        if phase == "approval" and error == "ApprovalRejected":
-            tasks.mark_disputed(order["order_id"], {"reason": cause, "after_rejection": True})
-            self._wait(order["order_id"], "dispute")
+        if phase == "approval" and error in {"ApprovalRejected", "ApprovalRejectedFinal", "States.Timeout"}:
+            self._approval_failed(order, error, cause)
         else:
             log.error("workflow.failed", order_id=order["order_id"], phase=phase, error=error, cause=cause)
+
+    def timeout(self, order_id: str, phase: str) -> None:
+        """Stand-in for a Step Functions wait timing out (tests, simulate)."""
+        token = ((get_stores().get_order(order_id) or {}).get("tokens") or {}).get(phase)
+        if token:
+            self.task_failure(token, "States.Timeout", f"{phase} wait timed out")
+
+    def _approval_failed(self, order: dict, error: str, cause: str) -> None:
+        # AwaitSellerApproval catches ApprovalRejected / States.Timeout → NextApprovalStage → AwaitSupervisorApproval;
+        # anything at the supervisor stage (or ApprovalRejectedFinal) → MarkDisputedAfterRejection → AwaitResolution.
+        oid = order["order_id"]
+        at_seller = (order.get("escalation") or {}).get("stage") == "seller"
+        if at_seller and error in {"ApprovalRejected", "States.Timeout"}:
+            tasks.next_approval_stage(oid, {"Error": error, "Cause": cause})
+            self._wait(oid, "approval")
+        else:
+            tasks.mark_disputed(oid, {"after_rejection": True})
+            self._wait(oid, "dispute")
 
     # -- the state machine, state for state ------------------------------------
     def _continue(self, order_id: str, phase: str, out: dict) -> None:
         if phase == "payment":                       # PaymentPending -> FundsHeld
-            tasks.notify_seller_funds_held(order_id, out)
-            self._wait(order_id, "dispatch")         # AwaitDispatch
+            self._ship(order_id, out)
         elif phase == "dispatch":
             tasks.mark_dispatched(order_id, out)      # MarkDispatched
             tasks.send_delivery_code(order_id, out)   # SendDeliveryCode
@@ -63,10 +79,21 @@ class LocalDriver(_Base):
                 self._wait(order_id, "dispute")      # AwaitResolution
         elif phase == "dispute":                     # DisputeOutcome (Choice)
             if out.get("outcome") == "resolved":
-                tasks.send_evidence_pack(order_id, out)  # SendEvidencePack -> Resolved
+                self._resolved(order_id, out)
             else:
                 tasks.mark_escalated(order_id, out)      # MarkEscalated
-                tasks.send_approval_email(order_id, out) # SendApprovalEmail
+                tasks.send_approval_email(order_id, out) # SendApprovalEmail (seller first)
                 self._wait(order_id, "approval")         # AwaitApproval
         elif phase == "approval":
-            tasks.send_evidence_pack(order_id, out)      # SendEvidencePack -> Resolved
+            tasks.notify_outcome(order_id, out)          # NotifyOutcome
+            self._resolved(order_id, out)
+
+    def _ship(self, order_id: str, out: dict) -> None:
+        tasks.book_courier(order_id, out)            # BookCourier
+        self._wait(order_id, "dispatch")             # AwaitDispatch (courier pickup scan)
+
+    def _resolved(self, order_id: str, out: dict) -> None:
+        tasks.settle_remainder(order_id, out)        # SettleRemainder
+        tasks.send_evidence_pack(order_id, out)      # SendEvidencePack
+        if out.get("status") == "RESOLVED_REPLACEMENT":  # AfterResolution (Choice)
+            self._ship(order_id, out)                # the replacement ships; its delivery releases the payout

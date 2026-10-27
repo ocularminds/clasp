@@ -19,7 +19,6 @@ from ..common.log import Log
 from ..common.media import get_media
 from ..common.money import fmt, percent_of
 from ..common.stores import get_stores
-from ..notify import router as notify
 from ..workflows import tasks
 from ..workflows.client import get_driver
 from . import evidence as evidence_mod
@@ -87,6 +86,7 @@ def _order_for(order_ref: str | None, actor_sub: str, allow_seller: bool = False
 def _summary(o: dict) -> dict:
     return {
         "order_id": o["order_id"], "item": o.get("item_name"), "status": o.get("status"),
+        "status_words": tasks.STATUS_WORDS.get(o.get("status", ""), str(o.get("status", "")).lower()),
         "amount": fmt(int(o["amount_minor"]), o["currency"]), "amount_minor": int(o["amount_minor"]), "currency": o["currency"],
         "discount": fmt(int(o.get("discount_minor", 0)), o["currency"]),
         "held": fmt(int(o.get("held_minor", 0)), o["currency"]), "refunded": fmt(int(o.get("refunded_minor", 0)), o["currency"]),
@@ -184,27 +184,28 @@ def my_orders(actor_sub: str, **_: Any) -> dict:
     seller_ids = {o["order_id"] for o in stores.orders_for_seller(actor_sub)}
     rows = [{**_summary(o), "your_role": "seller" if o["order_id"] in seller_ids and o.get("buyer_sub") != actor_sub else "buyer"}
             for o in _actor_orders(stores, actor_sub, allow_seller=True)]
-    return {"orders": rows[:5]}
+    party = stores.party_by_sub(actor_sub) or {}
+    return {"orders": rows[:5], "email_on_file": bool(party.get("email"))}
 
 
-# --------------------------------------------------------------------------- hold → dispatch → deliver
-def record_dispatch(order_id: str | None = None, actor_sub: str | None = None, photo_key: str | None = None,
-                    correlation_id: str = "", **_: Any) -> dict:
-    """Seller only. `order_id` may be the full ID, the 6-character code from the seller's alert, or omitted when the
-    seller has exactly one order waiting for dispatch."""
-    if not actor_sub:
-        raise ToolError("actor_sub is required")
-    o = _order_for(order_id, actor_sub, allow_seller=True, single_status="HELD", seller_only=True)
-    order_id = o["order_id"]
-    if o.get("seller_sub") != actor_sub:
-        raise ToolError("only the seller of this order can record dispatch")
-    if o.get("status") != "HELD":
-        raise ToolError(f"order is {o.get('status')}; dispatch is recorded once funds are held")
-    token = (o.get("tokens") or {}).get("dispatch")
-    if not token:
-        raise ToolError("the order is not waiting for dispatch")
-    get_driver().task_success(token, {"outcome": "dispatched", "order_id": order_id, "dispatch_photo_key": photo_key})
-    return {"order_id": order_id, "status": "DISPATCHED", "message": "Dispatch recorded; the buyer has been sent a delivery code by SMS."}
+def save_email(email: str, actor_sub: str, **_: Any) -> dict:
+    """The person asks for receipts and evidence packs by email. Stored on their own party record only."""
+    import re
+
+    email = (email or "").strip()
+    if len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", email):
+        raise ToolError("that doesn't look like an email address")
+    stores = get_stores()
+    party = stores.party_by_sub(actor_sub)
+    if not party:
+        raise ToolError("I can't identify you")
+    stores.put_party({**party, "email": email})
+    log.info("party.email_saved", party_id=party.get("party_id"))
+    return {"saved": True, "message": "Saved. Receipts and evidence packs for your orders will go to that address."}
+
+
+# --------------------------------------------------------------------------- dispatch → deliver
+# Dispatch is recorded by the courier's signed pickup scan (services/courier_mock), never by a chat message.
 
 
 def confirm_delivery(order_id: str, code: str, actor_sub: str, correlation_id: str = "", **_: Any) -> dict:
@@ -218,13 +219,31 @@ def confirm_delivery(order_id: str, code: str, actor_sub: str, correlation_id: s
         attempts = int(o.get("delivery_code_attempts", 0)) + 1
         stores.update_order(order_id, {"delivery_code_attempts": attempts})
         log.warn("delivery_code.mismatch", order_id=order_id, attempts=attempts, correlation_id=o.get("correlation_id") or None)
-        return {"verified": False, "attempts": attempts, "message": "That code doesn't match. Please check the SMS and try again."}
+        hint = " If the code never arrived, I can send a new one here." if attempts >= 2 else ""
+        return {"verified": False, "attempts": attempts,
+                "message": f"That code doesn't match. Please check the latest delivery code from Clasp and try again.{hint}"}
     stores.update_challenge(order_id, match["challenge_id"], {"status": "verified", "verified_at": clock.now()})
     available = int(o.get("held_minor", 0))
     return {"verified": True, **propose("release", order_id=order_id, amount_minor=available, currency=o["currency"],
                                         actor_sub=actor_sub, evidence={"delivery_code_verified": True, "challenge_id": match["challenge_id"]},
                                         metadata={"challenge_id": match["challenge_id"]},
                                         correlation_id=correlation_id or o.get("correlation_id", ""))}
+
+
+MAX_DELIVERY_CODES = 3
+
+
+def resend_delivery_code(order_id: str, actor_sub: str, **_: Any) -> dict:
+    """Buyer didn't get the delivery code: a fresh one, here in WhatsApp. Older codes stop working."""
+    o = _order_for(order_id, actor_sub)
+    if o.get("status") != "DISPATCHED":
+        raise ToolError(f"order is {tasks.STATUS_WORDS.get(o.get('status', ''), o.get('status'))}; a delivery code is only for an order on its way")
+    sent = [c for c in get_stores().challenges_for_order(o["order_id"]) if c.get("kind") == "delivery"]
+    if len(sent) >= MAX_DELIVERY_CODES:
+        raise ToolError("the delivery code has already been sent the maximum number of times; tell the buyer to check their messages")
+    out = tasks.issue_delivery_code(o["order_id"], prefer="whatsapp")
+    return {"sent": bool(out["channel"]), "channel": out["channel"],
+            "message": "A new delivery code has been sent. Earlier codes no longer work."}
 
 
 # --------------------------------------------------------------------------- Truce
@@ -239,7 +258,7 @@ def report_problem(order_id: str, description: str, actor_sub: str, correlation_
         raise ToolError(f"order is {o.get('status')}; a problem can be reported after dispatch and before release")
     challenge = issue_challenge(order_id, actor_sub, correlation_id=correlation_id)
     return {"order_id": order_id, "status": "DISPUTED", "truce": True, **challenge,
-            "message": "Truce called: the payout stays held. Ask the buyer for a live photo showing the code next to the item."}
+            "message": "Truce called: the payout stays held. Give the buyer the instruction exactly as written."}
 
 
 def issue_challenge(order_id: str, actor_sub: str, correlation_id: str = "", **_: Any) -> dict:
@@ -257,10 +276,16 @@ def issue_challenge(order_id: str, actor_sub: str, correlation_id: str = "", **_
     stores.put_challenge(ch)
     log.info("challenge.issued", order_id=order_id, challenge_id=ch["challenge_id"], correlation_id=ch["correlation_id"] or None)
     return {"challenge_id": ch["challenge_id"], "code": code, "expires_in_seconds": tasks.CHALLENGE_CODE_TTL,
-            "instruction": f"Write {code} on paper, place it next to the item, and send one live photo showing both."}
+            "instruction": f"Write {code} on a piece of paper, put it next to the item, and send me one photo (or a video under "
+                           f"30 seconds) showing both, within {tasks.CHALLENGE_CODE_TTL // 60} minutes."}
 
 
-def verify_evidence(order_id: str, photo_key: str, actor_sub: str, challenge_id: str | None = None, correlation_id: str = "", **_: Any) -> dict:
+def verify_evidence(order_id: str, photo_key: str | None = None, actor_sub: str = "", challenge_id: str | None = None,
+                    correlation_id: str = "", media_key: str | None = None, **_: Any) -> dict:
+    """`media_key` is a photo or a short video; `photo_key` is the older name for the same thing."""
+    photo_key = media_key or photo_key
+    if not photo_key:
+        raise ToolError("media_key is required")
     o = _order_for(order_id, actor_sub)
     stores = get_stores()
     challenges = [c for c in stores.challenges_for_order(order_id) if c.get("kind") == "dispute"]
@@ -269,7 +294,7 @@ def verify_evidence(order_id: str, photo_key: str, actor_sub: str, challenge_id:
         raise ToolError("no open challenge; issue one first")
     if int(ch["expires_at"]) <= clock.now():
         stores.update_challenge(order_id, ch["challenge_id"], {"status": "expired"})
-        raise ToolError("the challenge code expired; issue a fresh one")
+        raise ToolError("the challenge code expired; call issue_challenge for a fresh one and give the buyer the new instruction")
     media = get_media()
     live = media.get(photo_key)
     dispatch = media.get(o["dispatch_photo_key"]) if o.get("dispatch_photo_key") and media.exists(o["dispatch_photo_key"]) else None
@@ -279,7 +304,7 @@ def verify_evidence(order_id: str, photo_key: str, actor_sub: str, challenge_id:
                                                             "live_photo_key": photo_key, "verified_at": clock.now() if verified else None})
     return {"challenge_id": ch["challenge_id"], "challenge_verified": verified, **verdict,
             "note": "The model only reports. AgentSafe decides whether any money moves." if verified else
-                    "Evidence not verified: no refund can be authorized. Offer to re-issue the code."}
+                    "Evidence not verified: no refund can be authorized. Offer to issue a fresh code."}
 
 
 def _verified_challenge(order_id: str) -> dict | None:
@@ -294,13 +319,16 @@ def get_truce_options(order_id: str, actor_sub: str, **_: Any) -> dict:
     opts = policy().truce_options(o)
     return {"order_id": order_id, "options": opts, "evidence_verified": _verified_challenge(order_id) is not None,
             "auto_cap": fmt(int(policy().actions["refund"].get("auto_cap_minor", 0)), o["currency"]),
-            "note": "Offer at most three of these as reply buttons. Anything larger goes to a supervisor."}
+            "note": "Offer at most three of these as reply buttons. Anything else is decided by AgentSafe and may need the seller's approval."}
 
 
 def _resolution(action: str, kind: str, order_id: str, amount_minor: int, actor_sub: str, correlation_id: str) -> dict:
     o = _order_for(order_id, actor_sub)
+    order_id = o["order_id"]
     ch = _verified_challenge(order_id)
-    evidence = {"challenge_verified": True, "challenge_id": ch["challenge_id"]} if ch else {"challenge_verified": False}
+    # Evidence comes from our own store, never from the model: the verdict feeds AgentSafe's drift checks.
+    evidence = ({"challenge_verified": True, "challenge_id": ch["challenge_id"], "verdict": ch.get("verdict") or {}}
+                if ch else {"challenge_verified": False})
     result = propose(action, order_id=order_id, amount_minor=amount_minor, currency=o["currency"], actor_sub=actor_sub,
                      evidence=evidence, metadata={"kind": kind, "challenge_id": ch["challenge_id"] if ch else None},
                      correlation_id=correlation_id or o.get("correlation_id", ""))
@@ -308,9 +336,11 @@ def _resolution(action: str, kind: str, order_id: str, amount_minor: int, actor_
         token = (o.get("tokens") or {}).get("dispute")
         if token:
             get_driver().task_success(token, {"outcome": "escalate", "order_id": order_id, "decision_id": result["decision_id"],
-                                              "amount_minor": amount_minor, "currency": o["currency"], "kind": kind})
+                                              "amount_minor": amount_minor, "currency": o["currency"], "kind": kind,
+                                              "action": action, "reason": result.get("reason", "")})
             result["escalated"] = True
-            result["message"] = "Sent to a supervisor for approval by email. Tell the buyer you'll follow up here."
+            result["note"] = ("Tell the buyer this in your own words: the request has gone to the seller for approval, nothing "
+                              "has been paid yet, and you'll message them here with the answer.")
     return result
 
 
@@ -338,24 +368,13 @@ def offer_options(order_id: str, option_kinds: list[str], actor_sub: str, **_: A
             "options": chosen}
 
 
-def notify_party(order_id: str, party: str, text: str, actor_sub: str, correlation_id: str = "", **_: Any) -> dict:
-    o = _order_for(order_id, actor_sub, allow_seller=True)
-    if party == "seller":
-        mid = notify.send(channel="rcs", to=o["seller_phone"], text=text[:1000], order_id=order_id, correlation_id=o.get("correlation_id", ""))
-    elif party == "buyer":
-        mid = notify.send(channel="whatsapp", to=o["buyer_phone"], text=text[:1000], order_id=order_id, correlation_id=o.get("correlation_id", ""))
-    else:
-        raise ToolError("party must be buyer or seller")
-    return {"message_id": mid}
-
-
 TOOLS = {
     "list_items": list_items, "get_item": get_item, "start_order": start_order, "propose_discount": propose_discount,
-    "create_checkout": create_checkout, "get_order": get_order, "my_orders": my_orders, "record_dispatch": record_dispatch,
-    "confirm_delivery": confirm_delivery, "report_problem": report_problem, "issue_challenge": issue_challenge,
-    "verify_evidence": verify_evidence, "get_truce_options": get_truce_options, "propose_refund": propose_refund,
-    "propose_credit": propose_credit, "propose_replacement": propose_replacement, "offer_options": offer_options,
-    "notify_party": notify_party, "explain_policy": explain_policy,
+    "create_checkout": create_checkout, "get_order": get_order, "my_orders": my_orders, "save_email": save_email,
+    "confirm_delivery": confirm_delivery, "resend_delivery_code": resend_delivery_code, "report_problem": report_problem,
+    "issue_challenge": issue_challenge, "verify_evidence": verify_evidence, "get_truce_options": get_truce_options,
+    "propose_refund": propose_refund, "propose_credit": propose_credit, "propose_replacement": propose_replacement,
+    "offer_options": offer_options, "explain_policy": explain_policy,
 }
 
 

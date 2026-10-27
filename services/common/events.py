@@ -15,9 +15,9 @@ from .log import Log
 log = Log("events")
 
 SOURCE = "clasp.order"
-EVENT_TYPES = ("OrderCreated", "OrderHeld", "OrderDispatched", "DeliveryCodeSent", "OrderReleased",
-               "TruceOpened", "OrderEscalated", "OrderResolved")
-DELIVERY_EVENT_TYPES = ("OrderDispatched", "DeliveryCodeSent", "OrderReleased")
+EVENT_TYPES = ("OrderCreated", "OrderHeld", "CourierBooked", "OrderDispatched", "DeliveryCodeSent", "OrderReleased",
+               "TruceOpened", "OrderEscalated", "ApprovalRequested", "OrderResolved", "OrderSettled")
+DELIVERY_EVENT_TYPES = ("CourierBooked", "OrderDispatched", "DeliveryCodeSent", "OrderReleased")
 _FORBIDDEN_KEYS = {"code", "token", "tokens", "approve_url", "reject_url", "buyer_phone", "seller_phone", "phone"}
 
 

@@ -7,6 +7,7 @@ from . import tasks
 
 
 def lambda_handler(event, context):
+    """Raises tasks.DecionisUnavailable for the state machine's retry policy (its errorType is the class name)."""
     step = event["step"]
     order_id = event["order_id"]
     if step == "register_token":

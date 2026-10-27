@@ -85,22 +85,26 @@ def test_lifecycle_events_follow_the_order_through_escalation(world):
     dispatch(w, o["order_id"])
     oid = o["order_id"]
     tools.report_problem(oid, "Wrong item entirely.", actor_sub=w["buyer"])
-    tools.verify_evidence(oid, "live/demo.jpg", actor_sub=w["buyer"])
+    tools.verify_evidence(oid, actor_sub=w["buyer"], media_key="live/demo.jpg")
     assert tools.propose_refund(oid, 10800, actor_sub=w["buyer"])["decision"] == "escalate"
-    mail = [m for m in w["outbox"].for_channel("email") if m.to == "supervisor@example.com"][-1]
+    mail = [m for m in w["outbox"].for_channel("email") if m.to == "seller@example.com"][-1]
     token = parse_qs(urlparse(re.search(r"Approve: (\S+)", mail.text).group(1)).query)["token"][0]
     assert approvals.handle(token)["statusCode"] == 200
 
     rec = events.recorder()
-    assert rec.types() == ["OrderCreated", "OrderHeld", "OrderDispatched", "DeliveryCodeSent", "TruceOpened", "OrderEscalated", "OrderResolved"]
+    assert rec.types() == ["OrderCreated", "OrderHeld", "CourierBooked", "OrderDispatched", "DeliveryCodeSent", "TruceOpened",
+                           "OrderEscalated", "ApprovalRequested", "OrderResolved"]
     for e in rec.events:
         assert e["order_id"] == oid and e["correlation_id"] == "corr-e2e" and e["stage"]
         blob = json.dumps(e).lower()
         assert "token" not in blob and "+1555" not in blob  # no secrets, no phone numbers
-    assert rec.events[1]["status"] == "HELD" and rec.events[1]["held_minor"] == 10800
-    code_event = rec.events[3]
-    assert code_event["challenge_id"].startswith("chl_") and not re.search(r"\b[A-Z0-9]{6}\b", code_event.get("notes", "") or "")
-    assert rec.events[5]["requested_minor"] == 10800 and rec.events[6]["outcome"] == "RESOLVED_REFUND" and rec.events[6]["refunded_minor"] == 10800
+    by_type = {e["detail_type"]: e for e in rec.events}
+    assert by_type["OrderHeld"]["status"] == "HELD" and by_type["OrderHeld"]["held_minor"] == 10800
+    code_event = by_type["DeliveryCodeSent"]
+    assert code_event["challenge_id"].startswith("chl_") and code_event["channel"] == "sms"
+    assert not re.search(r"\b[A-Z0-9]{6}\b", code_event.get("notes", "") or "")
+    assert by_type["OrderEscalated"]["requested_minor"] == 10800 and by_type["ApprovalRequested"]["stage"] == "seller"
+    assert by_type["OrderResolved"]["outcome"] == "RESOLVED_REFUND" and by_type["OrderResolved"]["refunded_minor"] == 10800
 
 
 def test_events_never_carry_codes_tokens_or_phones():

@@ -33,6 +33,10 @@ def build_model(model=None):
 def turn_prompt(payload: dict) -> str:
     lines = [f"[channel={payload.get('channel')} role={payload.get('actor_role', 'buyer')}"
              + (f" name={payload['actor_name']}" if payload.get("actor_name") else "") + "]"]
+    notices = payload.get("notices") or []
+    if notices:
+        lines.append("(Since their last message, Clasp sent them, outside this chat: "
+                     + " | ".join(f"order {n.get('order')} by {str(n.get('channel', '')).upper()}: {n.get('memo')}" for n in notices) + ")")
     if payload.get("text"):
         lines.append(payload["text"])
     if payload.get("button"):

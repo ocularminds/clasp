@@ -123,6 +123,37 @@ class Settings:
         return env("AGENTSAFE_FUNCTION_ARN")
 
     @property
+    def agentsafe_tenant_key(self) -> str | None:
+        """Decionis hosted-gateway tenant key (AgentSafe-Tenant-Key). Never logged, never put in a URL."""
+        return _secret("AGENTSAFE_TENANT_KEY")
+
+    @property
+    def agentsafe_upstream_token(self) -> str | None:
+        """Bearer token the gateway relays to Clasp's POST /decide, so only governed calls reach the upstream."""
+        return _secret("AGENTSAFE_UPSTREAM_TOKEN")
+
+    @property
+    def agentsafe_gateway_timeout(self) -> float:
+        """Covers the authority's 4 s budget plus the upstream's answer through API Gateway."""
+        return float(env("AGENTSAFE_GATEWAY_TIMEOUT", "15") or 15)
+
+    @property
+    def agentsafe_gateway_mode(self) -> str:
+        """enforcement: the gateway is the only way to a decision; if it can't answer, nothing moves (fail closed).
+        shadow: the gateway only observes, so the reference service may decide directly when it is unreachable."""
+        return (env("AGENTSAFE_GATEWAY_MODE", "enforcement") or "enforcement").lower()
+
+    @property
+    def agentsafe_upstream_header(self) -> str:
+        """The header the gateway's upstreamCredential sets on every relayed call (authorization: "Bearer …")."""
+        return (env("AGENTSAFE_UPSTREAM_HEADER", "authorization") or "authorization").lower()
+
+    @property
+    def agentsafe_upstream_proof(self) -> str:
+        """Token line(s) served at /.well-known/agentsafe-upstream (`make upstream-proof` computes one)."""
+        return (env("AGENTSAFE_UPSTREAM_PROOF", "") or "").replace("\\n", "\n")
+
+    @property
     def executor_function_arn(self) -> str | None:
         return env("EXECUTOR_FUNCTION_ARN")
 
@@ -211,6 +242,11 @@ class Settings:
         return env("BEDROCK_VISION_MODEL_ID", self.model_id) or self.model_id
 
     @property
+    def video_model_id(self) -> str:
+        """Short evidence videos need a video-capable Bedrock model (Amazon Nova)."""
+        return env("BEDROCK_VIDEO_MODEL_ID", "us.amazon.nova-pro-v1:0") or "us.amazon.nova-pro-v1:0"
+
+    @property
     def guardrail_id(self) -> str | None:
         return env("GUARDRAIL_ID")
 
@@ -243,6 +279,36 @@ class Settings:
     @property
     def evidence_mode(self) -> str:
         return env("EVIDENCE_MODE", "stub") or "stub"
+
+    # courier (simulated) and the buyer's way back to the chat
+    @property
+    def courier_webhook_secret(self) -> str:
+        return _secret("COURIER_WEBHOOK_SECRET") or "change-me-local-courier"
+
+    @property
+    def courier_mode(self) -> str:
+        """manual: a courier page records pickup with a parcel photo; auto: pickup is scanned as soon as funds are held."""
+        return (env("COURIER_MODE", "manual") or "manual").lower()
+
+    @property
+    def whatsapp_business_number(self) -> str | None:
+        """Display number (E.164) for wa.me links on hosted pages. Optional."""
+        return env("WHATSAPP_BUSINESS_NUMBER")
+
+
+_secrets: dict[str, str] = {}
+
+
+def _secret(name: str) -> str | None:
+    """`<NAME>_SECRET_ARN` (Secrets Manager, cached per container) or the plain `<NAME>` env var."""
+    arn = env(f"{name}_SECRET_ARN")
+    if arn:
+        if arn not in _secrets:
+            from .aws import client
+
+            _secrets[arn] = client("secretsmanager").get_secret_value(SecretId=arn)["SecretString"]
+        return _secrets[arn] or None
+    return env(name)
 
 
 settings = Settings()

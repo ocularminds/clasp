@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Local stand-in for the HTTP API (hosted checkout, PSP webhook, approvals, AgentSafe /decide).
+"""Local stand-in for the HTTP API (hosted checkout, PSP webhook, courier pickup page + webhook, approvals, AgentSafe /decide).
 Builds API Gateway v2-shaped events and calls the same Lambda handlers that run in AWS.
 
     make api-local   → http://localhost:8080"""
@@ -19,6 +19,7 @@ os.environ.setdefault("NOTIFY_MODE", "console")
 
 from services.agentsafe import handler as agentsafe_h  # noqa: E402
 from services.approvals import handler as approvals_h  # noqa: E402
+from services.courier_mock import handler as courier_h  # noqa: E402
 from services.psp_mock import handler as psp_h  # noqa: E402
 
 
@@ -41,6 +42,8 @@ class Handler(BaseHTTPRequestHandler):
         path = ev["rawPath"]
         if path.startswith("/pay/") or path.startswith("/webhooks/psp"):
             out = psp_h.lambda_handler(ev, None)
+        elif path.startswith("/courier/") or path.startswith("/webhooks/courier"):
+            out = courier_h.lambda_handler(ev, None)
         elif path.startswith("/approvals"):
             out = approvals_h.lambda_handler(ev, None)
         elif path in {"/decide", "/approval-links"}:
@@ -67,5 +70,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
-    print(f"local API on http://localhost:{port}  (GET /pay/<checkout_id>, POST /webhooks/psp, GET /approvals, POST /decide)")
+    print(f"local API on http://localhost:{port}  (GET /pay/<checkout_id>, POST /webhooks/psp, GET /courier/<order>/<shipment>, "
+          "GET|POST /approvals, POST /decide)")
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

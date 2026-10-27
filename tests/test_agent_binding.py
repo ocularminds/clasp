@@ -10,6 +10,7 @@ from demo.seed import seed
 from services.agent.agent import handle_turn
 from services.agentsafe.signer import KmsVerifier
 from services.common.media import LocalMedia, set_media
+from services.courier_mock import courier
 from services.executor.executor import Executor, set_executor
 from services.notify.router import MemoryNotifier, set_notifier
 from services.psp_mock.handler import pay
@@ -77,7 +78,7 @@ def disputed_order(w) -> dict:
     o = tools.start_order("item_bag", actor_sub=w["buyer"])
     co = tools.create_checkout(o["order_id"], actor_sub=w["buyer"])
     pay(co["checkout_url"].rsplit("/", 1)[-1])
-    tools.record_dispatch(o["order_id"], actor_sub=w["seller"], photo_key="dispatch/x.jpg")
+    courier.scan_pickup(w["stores"].get_order(o["order_id"]), b"\xff\xd8\xff parcel")
     tools.report_problem(o["order_id"], "torn", actor_sub=w["buyer"])
     tools.verify_evidence(o["order_id"], "live/x.jpg", actor_sub=w["buyer"])
     return w["stores"].get_order(o["order_id"])
@@ -106,6 +107,23 @@ def test_spoofed_actor_and_injected_amount_are_rebound_and_denied(world):
     assert last["correlation_id"] == "corr-agent"
     assert [e["type"] for e in w["stores"].ledger_entries(o["order_id"])] == ["HOLD"]
     assert "denied" in out["text"]
+
+
+def test_workflow_notices_reach_the_next_turn_without_codes(world):
+    from services.agent.agent import turn_prompt
+    from services.ingress.dispatch import collect_notices
+
+    w = world
+    o = disputed_order(w)
+    notices = collect_notices(w["buyer"], "buyer")
+    memos = " ".join(n["memo"] for n in notices)
+    assert "picked up by the courier" in memos and "delivery code" in memos and "withheld" in memos
+    sms = [m for m in w["outbox"].for_channel("sms")][-1]
+    code = sms.text.split(" is ")[1][:6]
+    assert code not in memos                       # the agent never learns the delivery code
+    prompt = turn_prompt(payload(w, "where is my bag?", notices=notices))
+    assert "outside this chat" in prompt and o["order_id"][-6:] in prompt
+    assert collect_notices(w["buyer"], "buyer") == []  # handed over once
 
 
 def test_offer_options_surfaces_whatsapp_buttons(world):
