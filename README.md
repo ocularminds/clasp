@@ -213,7 +213,8 @@ real-phone recording still require the relevant person or service:
 2. Link the WhatsApp Business Account in the End User Messaging Social console; put the phone
    number ID and WABA ID in `.env` (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`).
 3. Create the RCS agent and register test devices; request an SMS origination number; put both in
-   one pool (`RCS_POOL_ID`, `SMS_ORIGINATION_IDENTITY`). SMS and SES both have production access.
+   one pool (`RCS_POOL_ID`, `SMS_ORIGINATION_IDENTITY`). SES has production access. SMS is still in the sandbox: it
+   reaches only verified destinations under a $1 monthly limit, and the production request is pending.
 4. Verify SES identities (`SES_FROM_EMAIL`, `SUPERVISOR_EMAIL`, demo buyer/seller emails).
 5. Enable Bedrock model access for the Claude model in `BEDROCK_MODEL_ID`.
 6. After `make deploy`: bind the WABA event destination and the pool's two-way channel to the inbound SNS
