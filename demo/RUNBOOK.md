@@ -475,10 +475,11 @@ shows the final 20-second console clip full screen. It exports a 1920 × 1080, 1
 requires actual recordings, and refuses to overwrite an existing output. `--third` remains an
 alias for `--panel` for older commands. Review the full export and check phone text at playback size.
 
-Before submitting the existing [Devpost project](https://devpost.com/software/clasp-nothing-moves-until-both-sides-are-kept-whole),
-upload the architecture, add a working public or unlisted YouTube/Vimeo demo-video URL, check the
-project text against the recorded evidence, and review the final rules/terms checkbox. Confirm
-that the repository link is accessible to the judges. The [hackathon instructions](https://github.com/aws-cds-partner/aws-cds-agentic-ai-partner-hackathon-private/blob/main/README.md)
+The [Devpost project](https://devpost.com/software/clasp-nothing-moves-until-both-sides-are-kept-whole)
+is **submitted**. After the owner's explicit rules/terms confirmation, Devpost displayed “Project
+submitted!”; the receipt was captured on 27 October at 21:14 UTC. The entry includes the architecture,
+revised unlisted demo video, verified ACE replacement and redacted approval-evidence ZIP. Check any
+later edits against the recorded evidence. The [hackathon instructions](https://github.com/aws-cds-partner/aws-cds-agentic-ai-partner-hackathon-private/blob/main/README.md)
 allow a private repository with the `aws-cds-partner` judging account invited. The owner approved
 that personal-repository write access, and the invitation was sent on 2026-10-25. Verify acceptance
 before judging; the invitation link is `https://github.com/ocularminds/clasp/invitations`.
@@ -499,5 +500,5 @@ promotional credits are separate.
 `UpdateOpportunity` replaces the writable document: fetch the latest opportunity, preserve all
 existing writable fields, and use its current `LastModifiedDate` when adding the marketing fields.
 
-The deadline is **Wednesday 2026-10-28, 13:00 PDT**: **20:00 UTC / 21:00 Stockholm**. A saved draft
-is not a submitted project. Confirm the submission success page and save its receipt.
+The edit deadline is **Wednesday 2026-10-28, 13:00 PDT**: **20:00 UTC / 21:00 Stockholm**.
+The confirmed submission and receipt are saved; no further submission action is pending.
