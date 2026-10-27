@@ -484,11 +484,18 @@ that personal-repository write access, and the invitation was sent on 2026-10-25
 before judging; the invitation link is `https://github.com/ocularminds/clasp/invitations`.
 The judges inspect the default branch's latest commit. Keep access through 2026-11-19.
 
-The draft already contains an ACE opportunity ID. Verify its creation date and the
-`AWS CDS Agentic AI Hackathon -Sept. 2026` campaign association rather than creating a duplicate.
-An opportunity pending AWS review may have disabled edit controls; add the campaign when AWS
-allows edits before treating that submission requirement as complete. The user confirmed no AWS
-Marketing Development Funds funding, so use `AwsFundingUsed=No`. Promotional credits are separate.
+Use ACE opportunity **O30466814**, created on 27 October at 20:47 UTC and submitted at 20:52 UTC.
+The account read-back confirms `Marketing.Source=Marketing Activity`, campaign
+`AWS CDS Agentic AI Hackathon -Sept. 2026`, `AwsFundingUsed=No` and review status `Submitted`.
+This owner-authorized replacement preserves the original customer and commercial details. It supersedes
+the locked `O30313007`; AWS Support case 01979785 now requests deletion or administrative retirement of
+that old duplicate. No removal has been confirmed. Use the replacement ID in Devpost.
+
+Include the campaign before submission, which locks the opportunity for AWS review. The replacement
+used `CreateOpportunity`, then `StartEngagementFromOpportunityTask` with `For Visibility Only`, matching
+the original request for no AWS sales support. The task reached `COMPLETE`. Direct `SubmitOpportunity`
+requires an existing engagement. The user confirmed no AWS Marketing Development Funds funding;
+promotional credits are separate.
 `UpdateOpportunity` replaces the writable document: fetch the latest opportunity, preserve all
 existing writable fields, and use its current `LastModifiedDate` when adding the marketing fields.
 

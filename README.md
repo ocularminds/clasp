@@ -223,7 +223,8 @@ real-phone recording still require the relevant person or service:
 6. After `make deploy`: bind the WABA event destination and the pool's two-way channel to the inbound SNS
    topics (two CLI commands in `demo/RUNBOOK.md`), then `make agent-deploy` and `make seed`.
 7. Export `docs/architecture.png` with `demo/export_assets.py` for the Devpost architecture field.
-8. Verify the existing ACE opportunity's campaign association; do not create a duplicate.
+8. Use ACE opportunity `O30466814`; its required hackathon campaign was verified after submission on 27 October.
+   It replaces the locked `O30313007`, whose removal has been requested from AWS Support.
 9. Decionis AgentSafe (enforcement): the `clasp` tenant at `https://clasp.decionisedge.com`. Store its tenant key in
    `clasp/dev/decionis-tenant-key`. Set the tenant's upstream to the origin of `API_BASE_URL`, and its
    `upstreamCredential` to `authorization: Bearer <clasp/dev/agentsafe-upstream-token>`. Put `make upstream-proof`'s
