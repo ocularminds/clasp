@@ -17,16 +17,18 @@ is asked only when policy escalates: a refund above the automatic limit, or poli
 denials, inconclusive evidence, a policy change, or an amount off the compensation ladder). If the seller
 rejects or doesn't answer, a Clasp supervisor decides.
 
-> Status: seven CDK stacks and the AgentCore runtime are deployed, and two live Zoom H6 orders completed
-> a Truce on WhatsApp with a 20% partial refund (see [deployment status](docs/deployment-status.md)).
-> Those runs used the earlier flow, where the seller dispatched by WhatsApp. The autonomous flow (courier
-> dispatch, seller-then-supervisor approval, drift, settlement, the Decionis gateway in enforcement at
-> `clasp.decionisedge.com`) was deployed on 27 October. Its hosted gateway now runs AgentSafe **0.7.0** and
-> selects the published `clasp` policy. One synthetic $1 payment passed through enforcement and produced exactly
-> one HOLD; the signed dossier confirms the selected bundle (see [gateway verification](docs/gateway-verification-2026-10-27.md)).
-> A complete courier-to-Truce-to-settlement handset run on this flow remains unverified. SES has production access;
-> the latest SMS check still shows sandbox access and a $1 monthly limit, with the requested $25 ceiling pending.
-> RCS is configured but untested on a supported handset. The [runbook](demo/RUNBOOK.md) has the recording plan.
+> Status: the autonomous flow completed a real-phone Zoom H6 order on **27 October**: a $120 simulated
+> payment, automatic courier pickup, delivery code over WhatsApp, Truce, seller email approval, **$36 store
+> credit and $84 released to the seller**. Step Functions succeeded and the ledger contains exactly HOLD,
+> CREDIT and RELEASE. A repeat refund was denied; inconclusive evidence escalated before the credit was
+> approved. See the [live verification](docs/live-order-verification-2026-10-27.md).
+> Seven CDK stacks and AgentCore are deployed. The hosted gateway runs AgentSafe **0.7.0** in enforcement
+> with the published `clasp` policy; the earlier $1 hold's signed dossier confirms the selected bundle
+> ([gateway verification](docs/gateway-verification-2026-10-27.md)). SES has production access. SMS remains
+> in the sandbox at a $1 monthly limit and rejected this run's sends because that limit was reached;
+> WhatsApp and email fallbacks worked. The requested $25 ceiling is pending. RCS remains untested on a
+> supported handset. The [published video](https://youtu.be/R1EKxswOsns) shows the earlier 26 October
+> partial-refund take. See [deployment status](docs/deployment-status.md) for the remaining checks.
 
 ## The invariant
 
@@ -199,8 +201,9 @@ delivery code and an approval link are all just evidence; none of them can write
 
 `demo/RUNBOOK.md` is the 3-minute script: buyer WhatsApp purchase → seller's one-way payment card → courier
 pickup scan → buyer SMS code → Truce with the injection attempt → an escalated refund the seller approves by
-SES → console view. The current video ([YouTube](https://www.youtube.com/watch?v=UPnOkHd2VJs)) shows the earlier
-seller-chat flow and will be re-recorded. RCS is configured but handset delivery is untested. `make decisions`
+SES → console view. The current video ([YouTube](https://youtu.be/R1EKxswOsns)) shows the completed 26 October
+seller-chat flow with a $21.60 partial refund. The separate [27 October live verification](docs/live-order-verification-2026-10-27.md)
+records autonomous pickup, seller approval and settlement. RCS is configured but handset delivery is untested. `make decisions`
 tails the AgentSafe decision log for the final shot.
 `docs/architecture.md` has the diagram; `docs/decisions.md` records why things are the way they are.
 

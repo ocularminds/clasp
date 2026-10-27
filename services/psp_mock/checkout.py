@@ -64,7 +64,7 @@ def render_page(order: dict | None, paid: bool = False, error: str | None = None
     code = html.escape(order["order_id"][-6:])
     if paid or order.get("status") not in {"PAYMENT_PENDING", "DRAFT"}:
         return _page("Payment confirmed", f"<p class='ok'>✔ {amount} for <b>{item}</b> is held by Clasp (order {code}).</p>"
-                                          "<p>The seller is paid only when you confirm delivery with the one-time code we text you. "
+                                          "<p>The seller is paid only when you confirm delivery with the one-time code we send by text message or WhatsApp. "
                                           "If anything is wrong when it arrives, tell Clasp before you share the code.</p>"
                                           + _back_to_chat())
     err = ("<p class='err'>The payment didn't go through. Please try again, or return to the chat for help.</p>"
