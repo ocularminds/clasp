@@ -1,4 +1,4 @@
-# Deployment status — 2026-10-27 (autonomous flow deployed; live take on the earlier flow)
+# Deployment status — 2026-10-27 (autonomous flow deployed; gateway hold proven; live take on the earlier flow)
 
 Two live Zoom H6 orders have completed the Truce flow with a $21.60 simulated partial refund
 each. The selected second take used real WhatsApp dispatch and challenge photos, an AgentSafe
@@ -26,14 +26,42 @@ Checked from the account and the public endpoints at 06:15–06:30 UTC on 27 Oct
 - `make gateway-check` passes: the tenant key is accepted, the gateway relays to Clasp's API, and the origin proof it
   serves matches `.env`; Clasp's `POST /decide` answers 401 without the upstream token.
 
-Not yet shown: no money decision has gone through the gateway and no order workflow has run since that deploy (the
-last Step Functions execution started at 00:07 UTC). `make gateway-check` sends no decision, so the gateway's
-`upstreamCredential` is proven by the first live hold. The runbook has the check. Nothing in the table below was
-re-verified against the new flow.
+**Redeployed later on 27 October: the re-record fixes (PR #17, `2fb41d5`).** All seven stacks are
+`UPDATE_COMPLETE` and AgentCore runtime version 5 is `READY`. PRs #18 and #19 change only docs and the local
+`make decisions` script, so `master` (`1cfd647`) needs no further deploy.
+
+**The gateway path is proven with one live hold (27 October, 17:40 UTC).**
+- **Policy:** the `clasp` tenant's policy is the named Decionis policy `clasp`, version `clasp-gateway-2026.10.27-1`
+  (bundle `e6078687-55e5-4323-98bc-7f2edc9b9b88`), published through the Decionis API and read back as `ACTIVE`. Its one
+  rule, `clasp-decide-allow`, answers `AUTO_APPROVE` for `http.post` on the exact path `/decide` when the body's
+  `action` is one of Clasp's seven money actions. The runbook has the rule.
+- **Gateway:** it runs AgentSafe 0.7.0 in enforcement. Its workspace credential is bound to the policy name `clasp`,
+  and it evaluates the newest `ACTIVE` version of that policy. That is not an immutable pin: publishing a new version
+  changes the live rule.
+- **Before the policy:** the first two attempts on the synthetic $1 checkout (`ord_smoke_20261027_6a2922e3dddb`) came
+  back `decionis_escalate: PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`. The order stayed unpaid with no ledger entry,
+  which is the fail-closed behaviour. Their Decionis reviews, dossiers `77e1acf9…` and `b1399668…`, remain as
+  history.
+- **After publication:** one Pay on the same checkout returned HTTP 200 at 17:40:51 UTC.
+  - The gateway answered `allow` and forwarded the call (`execution=FORWARDED`). That proves the `upstreamCredential`,
+    which `make gateway-check` can't.
+  - Clasp's reference policy then allowed it as decision `dec_6ae0e21f1aa370f74877`, `in_policy`, with all six checks
+    passing, and signed the authorization.
+  - The executor wrote exactly one ledger entry, `HOLD` $1.00 (`led_6ae0e223ce2766e96922`).
+  - The order is `HELD`.
+  - `make decisions` shows `17:40:47 allow    decionis  hold  $1.00 … in_policy  dossier=f7f1f55e`.
+- **Dossier:** Decionis evaluation `8f98f4a5-a81b-4401-ab33-9c3300b099f7` matched `clasp-decide-allow`. Dossier
+  `f7f1f55e-cfa5-4b59-a266-04f82b1cfcca` names the published bundle and version in both its policy snapshot and its
+  execution binding. Its three Ed25519 signatures (portable artifact, input snapshot, execution binding) verify
+  against Decionis's published key `decionis-dossier-prod-2026-09-27`. The full Decionis ledger chain was not verified.
+
+The synthetic order has no contacts and is left `HELD`; it started no Step Functions execution. No order workflow has
+run on the autonomous flow yet: the last execution started at 00:07 UTC on 27 October. Nothing in the table below was
+re-verified against the new flow unless the row says so.
 
 | Item | Evidence / current state |
 |---|---|
-| Master sync | PRs #8–#16 are merged; `master` is at `d33a79c`, and the autonomous flow from PR #16 is deployed (see above). The notification changes from PR #15 (`2ea529b`) are deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
+| Master sync | PRs #8–#19 are merged; `master` is at `1cfd647`, and the deployed service is `2fb41d5` (PR #17), which includes the autonomous flow from PR #16 (see above). The notification changes from PR #15 (`2ea529b`) are deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
 | AWS login | Intended account confirmed; region `us-east-1`. The fresh `aws login` landed in the `default` profile, and the profile named in `.env` was expired, so every `make` call ran with `AWS_PROFILE=default`. That identity is the account root user; a named IAM identity would be better hygiene before judging. Credentials remain local. |
 | Bootstrap | `CDKToolkit` reached `CREATE_COMPLETE`. |
 | Seven CDK stacks | The seven-stack deployment on `faf3c90` completed at 21:08 UTC. Knowledge and Events are `CREATE_COMPLETE`; the other five stacks are `UPDATE_COMPLETE`, and `by_seller` is `ACTIVE`. A subsequent CloudFormation change set deployed the tested notification bundle from `2ea529b` at 23:04 UTC; the Workflow stack reached `UPDATE_COMPLETE` and the Lambda code hash matched the uploaded asset. |
@@ -42,7 +70,7 @@ re-verified against the new flow.
 | Judge enrolment | The ingress Lambda carries `AUTO_ENROL_CHANNELS=whatsapp` and `AGENT_MODE=remote`. IAM simulation for its role returned `allowed` for `cognito-idp:AdminCreateUser` on the user pool and `dynamodb:PutItem` on the parties table. An unknown WhatsApp number will be enrolled as a buyer on first contact with its own Cognito identity; SMS and RCS unknown senders still receive the "not registered" reply. Not yet exercised from a real unknown handset. |
 | Seller short codes | `get_order` and `my_orders` accept the 6-character code within the caller's own orders through `by_seller`. PR #16 removed `record_dispatch`: a courier pickup scan now records dispatch. The live WhatsApp dispatch flow resolved `27e389` with `get_order` and recorded the seller's real photo. The single-awaiting-order shortcut and ambiguous matches are covered by tests. |
 | Bedrock | Anthropic first-use form accepted; a real Claude Sonnet 4.5 Converse request succeeded. |
-| AgentCore | Runtime version 4 is `READY` (21:10 UTC) with the deterministic-proposal prompt (the agent always submits a requested refund amount and relays AgentSafe's decision) and the policy-question guidance. A direct invocation as a synthetic buyer asked for the refund limit and evidence rules; the runtime called `explain_policy` through Gateway and replied with $50.00, 30% of the order, one live photo with the challenge code, and supervisor review above that. The Gateway target is `READY` and advertises all 19 tools including `explain_policy`. Runtime logs use the CDK-managed KMS key and 14-day retention. |
+| AgentCore | Runtime version 5 is `READY` with the PR #17 deploy on 27 October; a live query called `explain_policy` and returned the seller-first / supervisor review rules. Earlier: runtime version 4 was `READY` (21:10 UTC) with the deterministic-proposal prompt (the agent always submits a requested refund amount and relays AgentSafe's decision) and the policy-question guidance. A direct invocation as a synthetic buyer asked for the refund limit and evidence rules; the runtime called `explain_policy` through Gateway and replied with $50.00, 30% of the order, one live photo with the challenge code, and supervisor review above that. The Gateway target is `READY` and advertises all 19 tools including `explain_policy`. Runtime logs use the CDK-managed KMS key and 14-day retention. |
 | Ingress integration | A synthetic SNS event traversed Lambda, AgentCore, Bedrock and Gateway, then sent a real SMS reply. The user confirmed SMS receipt. Orders remained at zero. This was not a handset-originated inbound message. |
 | Live WhatsApp integration | Real messages from both demo identities traversed SNS, ingress, AgentCore and Bedrock. The second take's dispatch JPEG reached S3 at 23:17:42 UTC; the order entered `DISPATCHED`. A buyer damage report opened the Truce at 23:25 UTC. The fresh photo was verified at 23:27:09 UTC with `code_visible`, `code_matches` and `same_item_as_dispatch` true, confidence 0.95 and `damage_observed` false. Earlier SDK method, E.164 and exact S3 object-key fixes are deployed. |
 | Seller WhatsApp client | The original seller's iPhone showed “Invite” despite a registered business number. An owner-authorized temporary WhatsApp Web link and app restart restored typing; that temporary linked session was then logged out. After the role swap, the new seller's received recording still shows the “no longer on WhatsApp” footer while displaying dispatch and Truce messages. The backend accepted the real dispatch; the recording does not prove that this second iPhone's compose box works. |
@@ -57,7 +85,7 @@ re-verified against the new flow.
 | Live seller alert | The user confirmed the seller's SMS hold alert in both takes. The deployed notification change keeps the hold alert within one GSM segment and includes the 6-character order code. After the second take's recent WhatsApp dispatch photo, the Truce notice used WhatsApp and was visible in the seller recording. Other cases retain the RCS/SMS route. |
 | WhatsApp | The replacement Swedish business number is registered; AWS reports the WABA as `COMPLETE` and `Active`. AWS phone/WABA IDs are saved locally. Both topic-binding commands succeeded, and the WhatsApp topic has a confirmed ingress Lambda subscription. CDK deployment completed; ingress, tools and workflow-task functions have the real phone ID and successful updates. |
 | Seed | Four items and two distinct phone identities were seeded. For the second take, the owner authorized swapping buyer/seller roles and restocking the Zoom H6; both original and new order histories were preserved. The Zoom H6 is now out of stock. Both identities have used their one-refund allowance for 30 days. Local `.env` still names the original roles, so judge fixtures need reconciliation before another seeded run. No refund allowance or audit record was reset. |
-| Hosted API | Both live takes completed the deployed checkout for a simulated $108 purchase. The signed mock-provider confirmation advanced each order to `HELD`. |
+| Hosted API | Both live takes completed the deployed checkout for a simulated $108 purchase. The signed mock-provider confirmation advanced each order to `HELD`. On 27 October the synthetic $1 checkout reached `HELD` through the enforcing Decionis gateway (see above). |
 | Tests | 120 tests pass on the re-record fixes (113 on `d33a79c`). Earlier: 84 tests passed on `2ea529b`, including the previous authorization, workflow, packaging, identity, SDK, media, enrolment, short-code, knowledge retrieval, event and seven-stack IAM checks. Five additional cases cover the shorter seller alert and recent WhatsApp dispatch routing, including the RCS-photo exclusion and stale/future timestamps. |
 | Architecture | `docs/architecture.png` exported at 2400 × 1580 and saved in the existing Devpost draft. Source and asset manifest are included. |
 | Devpost story | The corrected story is saved in the Devpost draft and was reopened to verify persistence. It records the completed partial refund, real lifecycle events, received SES evidence packs, the model's actual photo verdict, missing buyer SMS and unsupported RCS handsets. Payments are disclosed as simulated; no supervisor approval or policy denial is claimed for this take. |

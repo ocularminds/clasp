@@ -232,15 +232,12 @@ Before recording:
      `https://clasp.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
   3. Set its `upstreamCredential` to header `authorization` with the file contents `Bearer <value of
      clasp/dev/agentsafe-upstream-token>`. An enforcing gateway drops the agent's own value and sets this one.
-  4. Name the route and give the tenant's policy a rule that approves Clasp's money actions. Without a matching
-     rule, Decionis holds every call for review: the first live hold on 27 October came back `202 ESCALATE` with
-     `PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`, and the checkout stayed unpaid. Add the gateway route
-
-     ```json
-     {"path": "/decide", "methods": ["POST"], "action": "clasp.decide"}
-     ```
-
-     and this rule to the tenant's policy bundle:
+  4. Give the tenant's policy a rule that approves Clasp's money actions. Without a matching rule, Decionis holds
+     every call for review. The first two live holds on 27 October came back `202 ESCALATE` with
+     `PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`, and the checkout stayed unpaid. The live setup has no gateway route
+     for `/decide`, so the gateway names the call `http.post`. The tenant's policy is the named policy `clasp`,
+     version `clasp-gateway-2026.10.27-1` (bundle `e6078687-55e5-4323-98bc-7f2edc9b9b88`), published through the
+     Decionis API with this one rule:
 
      ```json
      {
@@ -250,30 +247,36 @@ Before recording:
        "priority": 100,
        "enabled": true,
        "when": {"all": [
-         {"field": "transaction_type", "operator": "EQ", "value": "clasp.decide"},
+         {"field": "transaction_type", "operator": "EQ", "value": "http.post"},
+         {"field": "context.agent_safe.action.parameters.path", "operator": "EQ", "value": "/decide"},
          {"field": "context.agent_safe.action.parameters.body.action", "operator": "IN",
           "values": ["discount", "hold", "release", "refund", "credit", "replacement", "settle"]}
        ]},
        "then": {"action": "AUTO_APPROVE"},
-       "rationale": "Clasp's reference policy enforces caps, evidence, velocity and seller/supervisor approval, and signs the authorization."
+       "rationale": "Clasp's reference policy enforces caps, evidence, velocity and seller/supervisor approval, and signs the authorization. This rule admits only POST /decide with a known Clasp money action to that policy service; it does not itself execute a money action."
      }
      ```
 
+     The gateway (AgentSafe 0.7.0) has its workspace credential bound to the policy name `clasp` and evaluates the
+     newest `ACTIVE` version of that policy. This is not an immutable pin. Publishing a new version changes the live
+     rule without a Clasp deploy, so run the step 6 check again after any publish.
+
      Why it has this shape:
-     - The gateway names a call by its route; with no route for `/decide` the name is `http.post`. That name is
-       the `transaction_type` the rule matches. Without the route, match `transaction_type` `EQ` `"http.post"`
-       and `context.agent_safe.action.parameters.path` `EQ` `"/decide"` instead.
+     - The gateway names a call by its route. With no route for `/decide` the name is `http.post`, and that name
+       is the `transaction_type` the rule matches. The path condition keeps the rule to `/decide`. If you add a
+       route that renames the action (for example `clasp.decide`), change and retest the rule at the same time.
      - The intent's parameters are the HTTP call (`method`, `path`, `query`, `body`), so Decionis doesn't read
        Clasp's `amount_minor` as an amount. Body fields are still reachable as rule facts under
-       `context.agent_safe.action.parameters.body`.
+       `context.agent_safe.action.parameters.body`. The rule has no amount cap; Clasp's reference policy enforces
+       caps, evidence, velocity and approvals.
      - Only `AUTO_APPROVE` yields ALLOW. With no matching rule the outcome is review, which the gateway answers
        as `202 ESCALATE`.
      - Don't use `ESCALATE` as the rule's action: that is Decionis-managed review, and a seller's approval sent
        back through the gateway would be held again.
      - Check the action name the gateway actually used in the held call's dossier. `make decisions` prints
        `dossier=` with the first 8 characters of the dossier id that Clasp records with each gateway decision.
-     - Not yet confirmed against a live bundle: the `{"all": [...]}` grouping and `values` for `IN`. They are
-       taken from the Decionis policy core.
+     - The `{"all": [...]}` grouping and `values` for `IN` are confirmed against the live bundle: the 27 October hold
+       matched `clasp-decide-allow` (dossier `f7f1f55e…`).
   5. Put the origin proof from `make upstream-proof TENANT=clasp ORG=<organization uuid>` in `.env` as
      `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://clasp.decionisedge.com` and
      `AGENTSAFE_GATEWAY_MODE=enforcement`, and run `make deploy`. Clasp serves the proof at
@@ -283,7 +286,9 @@ Before recording:
      Before recording, run one throwaway order to `HELD` and confirm that `make decisions` shows the hold as
      `allow    decionis  hold` with a `dossier=` id. `decionis` means the call came through the gateway; `reference`
      would mean it was decided directly, which enforcement refuses. The same run warms the path, so the first take
-     doesn't wait on cold starts.
+     doesn't wait on cold starts. On 27 October one Pay on the synthetic $1 checkout gave
+     `17:40:47 allow    decionis  hold  $1.00 … in_policy  dossier=f7f1f55e`, with one `HOLD` in the ledger. Clasp's
+     adapter logged the gateway's `execution=FORWARDED`, which proves the upstream credential.
      If the checkout says the payment didn't go through:
      - a `decionis_escalate: …POLICY_MISMATCH` decision means no rule matched (step 4). The order stays unpaid
        with no ledger entry; press Pay again once the rule is in place;
