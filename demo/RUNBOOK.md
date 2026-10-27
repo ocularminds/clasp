@@ -232,12 +232,21 @@ Before recording:
      `https://clasp.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
   3. Set its `upstreamCredential` to header `authorization` with the file contents `Bearer <value of
      clasp/dev/agentsafe-upstream-token>`. An enforcing gateway drops the agent's own value and sets this one.
-  4. Give the tenant's policy a rule that approves Clasp's money actions. Without a matching rule, Decionis holds
-     every call for review. The first two live holds on 27 October came back `202 ESCALATE` with
-     `PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`, and the checkout stayed unpaid. The live setup has no gateway route
-     for `/decide`, so the gateway names the call `http.post`. The tenant's policy is the named policy `clasp`,
-     version `clasp-gateway-2026.10.27-1` (bundle `e6078687-55e5-4323-98bc-7f2edc9b9b88`), published through the
-     Decionis API with this one rule:
+  4. Select the published policy **`clasp`**. The hosted gateway's managed workspace credential is bound to this
+     policy name, so Decionis selects its newest active version. At the verified 27 October checkpoint, that is
+     `clasp-gateway-2026.10.27-1`, bundle `e6078687-55e5-4323-98bc-7f2edc9b9b88`. The two earlier requests had no matching
+     policy and returned `202 ESCALATE` with `PROTOCOL_OUTCOME_REVIEW,POLICY_MISMATCH`; the checkout stayed unpaid.
+
+     For a new policy version, validate its native bundle with `POST /v1/policies/validate`, then publish through
+     `POST /v1/protocol/policies/bundles` using authorized operator access. Supply `policy_id: "clasp"`, the intended
+     organization, a unique bundle UUID and version, an effective date, and the rule below. Read it back through
+     `GET /v1/protocol/policies/bundles` for that organization and confirm ACTIVE with the expected payload.
+     A saved authoring draft or an HTTP 202 publication acknowledgement alone does not establish active selection.
+
+     In the managed deployment settings, associate policy `clasp` while retaining the existing upstream credential
+     and ENFORCEMENT mode. Confirm the gateway workspace credential reports `policy_id: "clasp"`. This tenant's
+     registry is maintained by the provisioner; manual route edits can be overwritten. The current deployment has
+     no explicit `/decide` route and names the request **`http.post`**. Its published rule is:
 
      ```json
      {
@@ -265,6 +274,9 @@ Before recording:
      - The gateway names a call by its route. With no route for `/decide` the name is `http.post`, and that name
        is the `transaction_type` the rule matches. The path condition keeps the rule to `/decide`. If you add a
        route that renames the action (for example `clasp.decide`), change and retest the rule at the same time.
+     - Selection is owned by gateway configuration and its bound workspace credential. Putting `policy_id` inside
+       Clasp's HTTP body does not select a bundle. Runtime 0.7.0 also supports operator route selectors, but they
+       are not configured on this managed tenant.
      - The intent's parameters are the HTTP call (`method`, `path`, `query`, `body`), so Decionis doesn't read
        Clasp's `amount_minor` as an amount. Body fields are still reachable as rule facts under
        `context.agent_safe.action.parameters.body`. The rule has no amount cap; Clasp's reference policy enforces
@@ -275,23 +287,28 @@ Before recording:
        back through the gateway would be held again.
      - Check the action name the gateway actually used in the held call's dossier. `make decisions` prints
        `dossier=` with the first 8 characters of the dossier id that Clasp records with each gateway decision.
-     - The `{"all": [...]}` grouping and `values` for `IN` are confirmed against the live bundle: the 27 October hold
-       matched `clasp-decide-allow` (dossier `f7f1f55e…`).
+     - The `{"all": [...]}` grouping and `values` for `IN` passed 19 native-core cases, API validation, and the
+       live hold. Dossier `f7f1f55e…` records `clasp-decide-allow` as the selected rule.
   5. Put the origin proof from `make upstream-proof TENANT=clasp ORG=<organization uuid>` in `.env` as
      `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://clasp.decionisedge.com` and
      `AGENTSAFE_GATEWAY_MODE=enforcement`, and run `make deploy`. Clasp serves the proof at
      `/.well-known/agentsafe-upstream`.
   6. Run `make gateway-check`, which reads the gateway's mode and relays one unevaluated GET with the tenant key.
      `make gateway-check` doesn't send a decision, so it proves neither the upstream credential nor the rule.
-     Before recording, run one throwaway order to `HELD` and confirm that `make decisions` shows the hold as
-     `allow    decionis  hold` with a `dossier=` id. `decionis` means the call came through the gateway; `reference`
-     would mean it was decided directly, which enforcement refuses. The same run warms the path, so the first take
-     doesn't wait on cold starts. On 27 October one Pay on the synthetic $1 checkout gave
+     The [27 October synthetic $1 hold](../docs/gateway-verification-2026-10-27.md) already completed; preserve it
+     and do not press Pay again on that fixture. For a new smoke test, verify active publication and policy binding
+     first, then send Pay once on a fresh synthetic order. Require HTTP 200, order `HELD`, exactly one HOLD ledger
+     entry, and `allow    decionis  hold` with a `dossier=` id in `make decisions`. Retrieve that dossier and check
+     that its policy snapshot and execution binding identify the expected bundle and version. A gateway readiness
+     response or engine label alone cannot prove which policy was selected. `decionis` means the call came through
+     the gateway; `reference` would mean it was decided directly, which enforcement refuses.
+     On 27 October one Pay on that synthetic $1 checkout gave
      `17:40:47 allow    decionis  hold  $1.00 … in_policy  dossier=f7f1f55e`, with one `HOLD` in the ledger. Clasp's
      adapter logged the gateway's `execution=FORWARDED`, which proves the upstream credential.
      If the checkout says the payment didn't go through:
-     - a `decionis_escalate: …POLICY_MISMATCH` decision means no rule matched (step 4). The order stays unpaid
-       with no ledger entry; press Pay again once the rule is in place;
+     - a `decionis_escalate: …POLICY_MISMATCH` decision means the selected policy did not match. Check the policy
+       binding, publication state and action/path rule (step 4). Confirm the order remains unpaid with no ledger
+       entry before one retry after the correction; repeated Pay requests otherwise add more reviews;
      - an `agentsafe.gateway_unavailable` log with `upstream HTTP 401` means the gateway's `upstreamCredential`
        doesn't match `clasp/dev/agentsafe-upstream-token` (step 3).
 
