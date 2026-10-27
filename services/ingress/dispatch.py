@@ -21,6 +21,9 @@ from .normalize import Inbound
 
 log = Log("ingress")
 
+# Sent when the agent errors or answers nothing. It makes no claim about the order: tools may have run before the failure.
+AGENT_FAILED = "Sorry, I couldn't finish that just now. Please send your message again in a minute."
+
 
 def session_id_for(sub: str) -> str:
     """AgentCore runtimeSessionId must be ≥ 33 chars; derive a stable one from the sub."""
@@ -161,7 +164,14 @@ def handle_inbound(inbound: Inbound) -> dict:
     media_keys = fetch_whatsapp_media(inbound) if inbound.channel == "whatsapp" else fetch_url_media(inbound)
     payload = build_agent_payload(inbound, sub, party, media_keys, corr)
     ilog.info("agent.turn.in", actor_sub=sub, text=inbound.text[:200], media=len(media_keys), button=inbound.button)
-    out = invoke_agent(payload)
+    try:
+        out = invoke_agent(payload)
+    except Exception as e:  # noqa: BLE001 — answer the person; re-raising would make SNS run the same turn again
+        ilog.error("agent.turn.failed", actor_sub=sub, error=f"{type(e).__name__}: {str(e)[:300]}")
+        out = {}
+    if not (out.get("text") or "").strip() and not out.get("buttons"):
+        ilog.error("agent.turn.empty", actor_sub=sub, error=str(out.get("error") or "")[:300] or None)
+        out = {**out, "text": AGENT_FAILED}
     ilog.info("agent.turn.out", actor_sub=sub, text=(out.get("text") or "")[:200], buttons=len(out.get("buttons") or []),
               tools=out.get("tools_called"))
     reply(inbound, out, corr)

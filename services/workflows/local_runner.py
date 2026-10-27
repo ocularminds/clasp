@@ -60,7 +60,7 @@ class LocalDriver(_Base):
             tasks.next_approval_stage(oid, {"Error": error, "Cause": cause})
             self._wait(oid, "approval")
         else:
-            tasks.mark_disputed(oid, {"after_rejection": True})
+            tasks.mark_disputed(oid, {"after_rejection": True, "error": error})
             self._wait(oid, "dispute")
 
     # -- the state machine, state for state ------------------------------------

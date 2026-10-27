@@ -48,3 +48,21 @@ def test_a_failing_channel_falls_through_to_the_next(make_order, stores, monkeyp
     notices = stores.get_order(order["order_id"])["notices"]
     assert [n["channel"] for n in notices] == ["email", "whatsapp"]
     assert stores.get_order(order["order_id"])["status"] == "DISPUTED"  # the order kept moving
+
+
+def test_a_replacement_request_is_never_described_as_zero_dollars():
+    assert tasks.asked_for({"kind": "replacement", "amount_minor": 0}, "USD") == "replacement"
+    assert tasks.asked_for({"kind": "refund", "amount_minor": 10800, "currency": "USD"}, "USD") == "$108.00 refund"
+
+
+def test_allowed_resolutions_say_what_happened():
+    from services.agentsafe.policy import Policy, describe
+
+    p = Policy.load()
+    req = {"action": "refund", "amount_minor": 2160, "currency": "USD"}
+    assert describe(p, "allow", "in_policy", req, None) == \
+        "Your $21.60 refund is approved and recorded (test mode: no real money moves)."
+    assert describe(p, "allow", "seller_approved: the seller approved decision dec_1", req, None).startswith(
+        "The seller approved it. Your $21.60 refund")
+    held = describe(p, "escalate", "decionis_escalate: review", req, None)
+    assert "seller has been asked to approve" in held and "Decionis" not in held and "AgentSafe" not in held

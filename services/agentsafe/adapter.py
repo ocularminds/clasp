@@ -3,7 +3,7 @@
     decision = agentsafe.decide(action="refund", order_id=..., amount_minor=2400, ...)
 
 Resolution order:
-  AGENTSAFE_URL      the Decionis AgentSafe hosted gateway (e.g. https://dci.decionisedge.com). The gateway
+  AGENTSAFE_URL      the Decionis AgentSafe hosted gateway (e.g. https://clasp.decionisedge.com). The gateway
                      evaluates the call, records a Decionis dossier, and relays it to the tenant's upstream,
                      which is Clasp's own POST /decide (the reference service, which signs the authorization).
                      In enforcement mode it can block (403) or hold (202) the call itself.

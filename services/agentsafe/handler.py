@@ -1,6 +1,8 @@
 """Lambda entrypoint for the reference policy service.
 
-Direct invoke (other Clasp Lambdas): a DecideRequest, {"op": "approval_links", ...} or {"op": "record_external", ...}.
+Direct invoke (other Clasp Lambdas): {"op": "approval_links", ...}, {"op": "record_external", ...} (deny or escalate
+only), or a DecideRequest. A DecideRequest is refused while an enforcing gateway is configured (AGENTSAFE_URL with
+AGENTSAFE_GATEWAY_MODE=enforcement): then the only way to an allow is through the gateway, not around it.
 API Gateway POST /decide: the upstream of the Decionis AgentSafe hosted gateway. It answers only callers that present
 the upstream token in AGENTSAFE_UPSTREAM_HEADER (an enforcing gateway sets it from its upstreamCredential; in shadow
 Clasp's services send it) and records the gateway's x-agent-safe-* references with the decision, so every logged
@@ -12,7 +14,10 @@ import hmac
 import json
 
 from ..common.config import settings
+from ..common.log import Log
 from .service import DecideRequest, get_service
+
+log = Log("agentsafe.handler")
 
 GATEWAY_HEADERS = {"x-agent-safe-decision-id": "decision_id", "x-agent-safe-dossier-id": "dossier_id",
                    "x-agent-safe-intent-hash": "intent_hash"}
@@ -58,6 +63,13 @@ def lambda_handler(event, context):
             body = get_service().record_external(req, str(payload["decision"]), str(payload["reason"]),
                                                  str(payload.get("engine") or "external"), dict(payload.get("refs") or {})).to_dict()
             status = 200
+        elif not via_http and settings.agentsafe_url and settings.agentsafe_gateway_mode == "enforcement":
+            # Nothing is recorded: no decision was made. The adapter never sends this in enforcement.
+            log.error("agentsafe.direct_invoke_refused", action=payload.get("action"), order_id=payload.get("order_id"),
+                      actor_sub=payload.get("actor_sub"), correlation_id=payload.get("correlation_id") or None)
+            body = {"decision": "deny", "reason": "gateway_required: decisions go through the Decionis gateway in enforcement",
+                    "decision_id": "-", "policy_version": "-"}
+            status = 403
         else:
             req = DecideRequest.from_dict(payload)
             if via_http:

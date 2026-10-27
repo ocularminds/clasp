@@ -137,6 +137,25 @@ def test_resend_delivery_code_goes_to_whatsapp_and_retires_the_old_code(world):
     assert all(new not in n["memo"] and old not in n["memo"] for n in notices)  # codes never reach the agent's context
 
 
+def test_a_release_that_did_not_go_through_leaves_the_delivery_code_usable(world, monkeypatch):
+    w = world
+    o = buy_and_hold(w)
+    code = dispatch(w, o["order_id"])
+    real = tools.propose
+
+    def unreachable(action, **kw):  # the enforcing gateway couldn't answer: AgentSafe denied, nothing moved
+        return {"decision": "deny", "reason": "decionis_unavailable: gateway HTTP 503", "executed": False,
+                "message": "The policy service can't be reached right now, so nothing has changed. Please try again shortly."}
+
+    monkeypatch.setattr(tools, "propose", unreachable)
+    first = tools.confirm_delivery(o["order_id"], code, actor_sub=w["buyer"])
+    assert not first.get("executed") and "try again" in first["message"]
+    assert w["stores"].get_order(o["order_id"])["status"] == "DISPATCHED"
+    monkeypatch.setattr(tools, "propose", real)
+    again = tools.confirm_delivery(o["order_id"], code, actor_sub=w["buyer"])  # the same code still works
+    assert again["executed"] and w["stores"].get_order(o["order_id"])["status"] == "RELEASED"
+
+
 def test_truce_injection_denied_then_partial_refund_and_seller_gets_the_rest(world, monkeypatch):
     w = world
     o = buy_and_hold(w)
@@ -243,7 +262,9 @@ def test_seller_rejects_then_supervisor_approves(world):
     assert page["statusCode"] == 200 and "A Clasp supervisor will now decide" in page["body"]
     o = w["stores"].get_order(oid)
     assert o["status"] == "ESCALATED" and o["escalation"]["stage"] == "supervisor" and o["escalation"]["seller_outcome"] == "rejected"
-    assert "a Clasp supervisor is reviewing it now" in w["outbox"].last("whatsapp").text
+    told = w["outbox"].last("whatsapp").text
+    assert "didn't approve the $108.00 refund" in told and "a Clasp supervisor will decide within 48 hours" in told
+    assert "Nothing has been paid yet" in told
     # the seller's approve link is dead once the decision has moved on
     assert "moved on" in approvals.handle(seller_approve)["body"]
     sup_approve, _ = _links(w, "supervisor@example.com")
@@ -251,6 +272,10 @@ def test_seller_rejects_then_supervisor_approves(world):
     assert approvals.handle(sup_approve)["statusCode"] == 200
     final = w["stores"].get_order(oid)
     assert final["status"] == "RESOLVED_REFUND" and w["stores"].decisions_for_order(oid)[-1]["reason"].startswith("supervisor_approved")
+    # the evidence pack goes to both parties: no one's address is in it, the approvers' included
+    packs = [m for m in w["outbox"].for_channel("email") if m.attachments]
+    assert {m.to for m in packs} == {"buyer@example.com", "seller@example.com"}
+    assert all("@" not in m.attachments[0]["data"].decode() for m in packs)
 
 
 def test_seller_silence_moves_the_decision_to_a_supervisor(world):
@@ -259,8 +284,18 @@ def test_seller_silence_moves_the_decision_to_a_supervisor(world):
     w["driver"].timeout(oid, "approval")
     o = w["stores"].get_order(oid)
     assert o["escalation"]["stage"] == "supervisor" and o["escalation"]["seller_outcome"] == "timeout"
-    assert "hasn't answered" in w["outbox"].last("whatsapp").text
+    assert "didn't reply in time about the $108.00 refund" in w["outbox"].last("whatsapp").text
     assert "didn't answer in time" in [m for m in w["outbox"].for_channel("email") if m.to == "supervisor@example.com"][-1].text
+
+
+def test_supervisor_silence_is_not_reported_as_a_decision(world):
+    w = world
+    oid = _escalate_full_refund(w)
+    w["driver"].timeout(oid, "approval")  # the seller doesn't answer
+    w["driver"].timeout(oid, "approval")  # nor does the supervisor
+    assert w["stores"].get_order(oid)["status"] == "DISPUTED"
+    msg = w["outbox"].last("whatsapp").text
+    assert "wasn't decided in time" in msg and "supervisor" not in msg
 
 
 def test_supervisor_rejection_returns_to_truce_with_buttons(world):
@@ -273,7 +308,8 @@ def test_supervisor_rejection_returns_to_truce_with_buttons(world):
     assert back["status"] == "DISPUTED" and back["tokens"]["dispute"] and back["dispute"]["reopened"]
     assert back["dispute"]["reason"] == "Wrong item entirely."  # the buyer's words survive the rejection
     msg = w["outbox"].last("whatsapp")
-    assert "couldn't approve the $108.00 refund" in msg.text and len(msg.buttons) == 3
+    assert "A Clasp supervisor didn't approve the $108.00 refund" in msg.text and len(msg.buttons) == 3
+    assert "Here's what I can still offer: " in msg.text and "($" in msg.text  # the amounts, not just the buttons
     # in-policy option still works after the rejection
     res = tools.propose_credit(oid, 3240, actor_sub=w["buyer"])  # 30% store credit
     assert res["decision"] == "allow" and res["status"] == "RESOLVED_CREDIT"

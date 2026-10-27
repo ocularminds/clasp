@@ -168,8 +168,9 @@ def evaluate(policy: Policy, req: dict, order: dict | None, prior_refunds: int, 
         return DENY, f"{code}: {detail}" if detail else code, checks
 
     def approved_reason() -> str:
+        # The approver's address stays in the decision's context; the reason is shown to both parties.
         role = approval.get("stage") or "supervisor"  # type: ignore[union-attr]
-        return f"{role}_approved: {approval.get('approver')} approved decision {approval.get('decision_id')}"  # type: ignore[union-attr]
+        return f"{role}_approved: the {role} approved decision {approval.get('decision_id')}"  # type: ignore[union-attr]
 
     if not rules:
         return deny("unknown_action", f"'{action}' is not a money action this policy knows")
@@ -293,17 +294,24 @@ def describe(policy: Policy, outcome: str, reason: str, req: dict, order: dict |
     amount = req.get("amount_minor") if isinstance(req.get("amount_minor"), int) else 0
     code = reason.split(":", 1)[0]
     if outcome == ALLOW:
-        if code.endswith("_approved"):
-            who = "the seller" if code.startswith("seller") else "a Clasp supervisor"
-            return f"Approved by {who}."
-        return {"discount": f"{fmt(amount, cur)} off approved.", "hold": "Payment confirmed and held.",
+        done = {"discount": f"{fmt(amount, cur)} off approved.", "hold": "Payment confirmed and held.",
                 "release": "Delivery confirmed; the seller's payout is released.",
-                "settle": "The rest of the payment is released to the seller."}.get(action or "", "Approved within policy.")
+                "settle": "The rest of the payment is released to the seller.",
+                "refund": f"Your {fmt(amount, cur)} refund is approved and recorded (test mode: no real money moves).",
+                "credit": f"{fmt(amount, cur)} store credit is approved and added to your account (test mode).",
+                "replacement": "A replacement is approved. A courier will collect it from the seller, and you'll get a "
+                               "new delivery code when it's on its way."}.get(action or "", "Approved.")
+        if code.endswith("_approved"):
+            who = "The seller" if code.startswith("seller") else "A Clasp supervisor"
+            return f"{who} approved it. {done}"
+        return done
     if outcome == ESCALATE:
         first = policy.stages[0]["role"] if policy.stages else "supervisor"
         who = "the seller" if first == "seller" else "a Clasp supervisor"
         if reason.startswith("decionis_escalate"):
-            return "Decionis AgentSafe is holding this request for review. Nothing has been paid."
+            if action in {"refund", "credit", "replacement"}:  # a held Truce request goes to the same human approvers
+                return f"This needs a human check, so {who} has been asked to approve it."
+            return "The marketplace's policy service is holding this for a manual check, so nothing has changed yet."
         if "above_auto_cap" in reason:
             return f"{fmt(amount, cur)} is above the automatic limit, so {who} has been asked to approve it."
         return f"This needs a human check before it can go ahead, so {who} has been asked to approve it."

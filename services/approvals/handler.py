@@ -122,7 +122,7 @@ def handle(token: str | None) -> dict:
     result = propose(esc.get("action") or "refund", order_id=order_id, amount_minor=amount, currency=currency,
                      actor_sub=order["buyer_sub"], evidence=_latest_evidence(stores, order_id),
                      context={"approval_token": token, "approver": approver, "approval_stage": stage},
-                     metadata={"kind": esc.get("kind", "refund"), "approved_by": approver, "approval_stage": stage},
+                     metadata={"kind": esc.get("kind", "refund"), "approval_stage": stage},  # the ledger reaches both parties
                      correlation_id=corr)
     log.info("approval.processed", order_id=order_id, approver=approver, stage=stage, decision=result.get("decision"),
              executed=result.get("executed"), correlation_id=corr)

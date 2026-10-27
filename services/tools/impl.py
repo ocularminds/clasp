@@ -222,12 +222,16 @@ def confirm_delivery(order_id: str, code: str, actor_sub: str, correlation_id: s
         hint = " If the code never arrived, I can send a new one here." if attempts >= 2 else ""
         return {"verified": False, "attempts": attempts,
                 "message": f"That code doesn't match. Please check the latest delivery code from Clasp and try again.{hint}"}
-    stores.update_challenge(order_id, match["challenge_id"], {"status": "verified", "verified_at": clock.now()})
     available = int(o.get("held_minor", 0))
-    return {"verified": True, **propose("release", order_id=order_id, amount_minor=available, currency=o["currency"],
-                                        actor_sub=actor_sub, evidence={"delivery_code_verified": True, "challenge_id": match["challenge_id"]},
-                                        metadata={"challenge_id": match["challenge_id"]},
-                                        correlation_id=correlation_id or o.get("correlation_id", ""))}
+    result = propose("release", order_id=order_id, amount_minor=available, currency=o["currency"], actor_sub=actor_sub,
+                     evidence={"delivery_code_verified": True, "challenge_id": match["challenge_id"]},
+                     metadata={"challenge_id": match["challenge_id"]},
+                     correlation_id=correlation_id or o.get("correlation_id", ""))
+    # The code is spent only when the payout went through: if the release was refused or the policy service was
+    # unreachable, the buyer can send the same code again.
+    if result.get("executed"):
+        stores.update_challenge(order_id, match["challenge_id"], {"status": "verified", "verified_at": clock.now()})
+    return {"verified": True, **result}
 
 
 MAX_DELIVERY_CODES = 3

@@ -1,45 +1,46 @@
-# Deployment status — 2026-10-27 (completed live take and video export)
+# Deployment status — 2026-10-27 (autonomous flow deployed; live take on the earlier flow)
 
 Two live Zoom H6 orders have completed the Truce flow with a $21.60 simulated partial refund
 each. The selected second take used real WhatsApp dispatch and challenge photos, an AgentSafe
 `allow` decision, exactly one refund entry, a successful Step Functions execution, and two
 received SES evidence-pack emails. The model matched the challenge code and item; it did not
-confirm the reported damage. Payments remain simulated. SMS production access, the ACE campaign
+confirm the reported damage. Payments remain simulated. The ACE campaign
 association, publication, judge fixture reconciliation and Devpost submission remain
 open. The completed live video is exported and verified at 1:53.933. The two available iPhones are unsupported for the RCS test.
 
-**Not yet deployed: the autonomous flow (branch `feat/autonomous-truce`).** It adds:
+**Deployed on 27 October: the autonomous flow (PR #16, `d33a79c`).** It adds:
 
 - courier pickup scans in place of seller WhatsApp dispatch;
 - seller-then-supervisor approval;
 - policy drift escalation and settlement of the remainder to the seller;
-- the Decionis AgentSafe hosted gateway with reference fallback;
+- the Decionis AgentSafe hosted gateway in enforcement, failing closed (the reference service decides directly only in shadow mode);
 - short-video evidence, workflow notices in the agent's context, email capture and delivery-code resend;
 - the copy rewrites.
 
-It passes the full offline suite and simulator. Nothing in the table below was re-verified against it.
+Checked from the account and the public endpoints at 06:15–06:30 UTC on 27 October:
+- the Data, Events, Agent, Messaging, Workflow and Api stacks are `UPDATE_COMPLETE`, the last two at 05:57–05:58 UTC;
+- every Lambda that asks for a decision has `AGENTSAFE_URL=https://clasp.decionisedge.com` and
+  `AGENTSAFE_GATEWAY_MODE=enforcement`; the deployed `COURIER_MODE` is `auto`;
+- `https://clasp.decionisedge.com/_agentsafe/readyz` answers `"mode":"ENFORCEMENT","authority":"decionis"`
+  (the older `dci` host still answers `SHADOW` and is no longer used);
+- `make gateway-check` passes: the tenant key is accepted, the gateway relays to Clasp's API, and the origin proof it
+  serves matches `.env`; Clasp's `POST /decide` answers 401 without the upstream token.
 
-The owner reports the `dci` hosted gateway was promoted to enforcement on 27 October. A public readiness probe at
-02:30 UTC that day still answered `"mode":"SHADOW","authority":"decionis"`, so the promotion may not have been live yet.
-To route Clasp through it:
-- rotate the tenant key (recorded as lost);
-- set the tenant's upstream and its `upstreamCredential`;
-- serve the origin proof;
-- deploy with `AGENTSAFE_URL`;
-- run `make gateway-check`.
-
-The runbook has the steps.
+Not yet shown: no money decision has gone through the gateway and no order workflow has run since that deploy (the
+last Step Functions execution started at 00:07 UTC). `make gateway-check` sends no decision, so the gateway's
+`upstreamCredential` is proven by the first live hold. The runbook has the check. Nothing in the table below was
+re-verified against the new flow.
 
 | Item | Evidence / current state |
 |---|---|
-| Master sync | PRs #8–#15 are merged; `master` is at `493ec7c`. The notification changes from PR #15 (`2ea529b`) are deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
+| Master sync | PRs #8–#16 are merged; `master` is at `d33a79c`, and the autonomous flow from PR #16 is deployed (see above). The notification changes from PR #15 (`2ea529b`) are deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
 | AWS login | Intended account confirmed; region `us-east-1`. The fresh `aws login` landed in the `default` profile, and the profile named in `.env` was expired, so every `make` call ran with `AWS_PROFILE=default`. That identity is the account root user; a named IAM identity would be better hygiene before judging. Credentials remain local. |
 | Bootstrap | `CDKToolkit` reached `CREATE_COMPLETE`. |
 | Seven CDK stacks | The seven-stack deployment on `faf3c90` completed at 21:08 UTC. Knowledge and Events are `CREATE_COMPLETE`; the other five stacks are `UPDATE_COMPLETE`, and `by_seller` is `ACTIVE`. A subsequent CloudFormation change set deployed the tested notification bundle from `2ea529b` at 23:04 UTC; the Workflow stack reached `UPDATE_COMPLETE` and the Lambda code hash matched the uploaded asset. |
 | Knowledge Base | `ClaspDevKnowledge`: Bedrock Knowledge Base `ACTIVE` on `S3_VECTORS` with `amazon.titan-embed-text-v2:0`. `make kb-sync` rendered the policy document from `policy.yaml`, uploaded it with the Truce FAQ, and ingestion job `EJCJF4DK2Q` reached `COMPLETE` (scanned 2, indexed 2, failed 0). A direct retrieval returned the supervisor-approval passage at score 0.71. The deployed tools Lambda answered `explain_policy` with `source: knowledge_base`, proving the SSM lookup and the `bedrock:Retrieve` grant. The id is published at `/clasp/dev/knowledge_base_id`. |
 | Events | `ClaspDevEvents`: bus `clasp-dev`, both rules and the 7-day archive are enabled. Real order `27e389` emitted `OrderCreated`, `OrderHeld`, `OrderDispatched`, `DeliveryCodeSent`, `TruceOpened` and `OrderResolved` into the CloudWatch audit log. The resolution event reports three decisions, two evidence packs and a 2160-minor-unit refund. `DeliveryCodeSent` means AWS accepted the send; it does not establish handset receipt. The earlier synthetic smoke event remains clearly labelled. |
 | Judge enrolment | The ingress Lambda carries `AUTO_ENROL_CHANNELS=whatsapp` and `AGENT_MODE=remote`. IAM simulation for its role returned `allowed` for `cognito-idp:AdminCreateUser` on the user pool and `dynamodb:PutItem` on the parties table. An unknown WhatsApp number will be enrolled as a buyer on first contact with its own Cognito identity; SMS and RCS unknown senders still receive the "not registered" reply. Not yet exercised from a real unknown handset. |
-| Seller short codes | `get_order`, `my_orders` and `record_dispatch` accept the 6-character code within the caller's own orders through `by_seller`. The live WhatsApp dispatch flow resolved `27e389` with `get_order` and recorded the seller's real photo. The single-awaiting-order shortcut and ambiguous matches are covered by tests. |
+| Seller short codes | `get_order` and `my_orders` accept the 6-character code within the caller's own orders through `by_seller`. PR #16 removed `record_dispatch`: a courier pickup scan now records dispatch. The live WhatsApp dispatch flow resolved `27e389` with `get_order` and recorded the seller's real photo. The single-awaiting-order shortcut and ambiguous matches are covered by tests. |
 | Bedrock | Anthropic first-use form accepted; a real Claude Sonnet 4.5 Converse request succeeded. |
 | AgentCore | Runtime version 4 is `READY` (21:10 UTC) with the deterministic-proposal prompt (the agent always submits a requested refund amount and relays AgentSafe's decision) and the policy-question guidance. A direct invocation as a synthetic buyer asked for the refund limit and evidence rules; the runtime called `explain_policy` through Gateway and replied with $50.00, 30% of the order, one live photo with the challenge code, and supervisor review above that. The Gateway target is `READY` and advertises all 19 tools including `explain_policy`. Runtime logs use the CDK-managed KMS key and 14-day retention. |
 | Ingress integration | A synthetic SNS event traversed Lambda, AgentCore, Bedrock and Gateway, then sent a real SMS reply. The user confirmed SMS receipt. Orders remained at zero. This was not a handset-originated inbound message. |
@@ -57,7 +58,7 @@ The runbook has the steps.
 | WhatsApp | The replacement Swedish business number is registered; AWS reports the WABA as `COMPLETE` and `Active`. AWS phone/WABA IDs are saved locally. Both topic-binding commands succeeded, and the WhatsApp topic has a confirmed ingress Lambda subscription. CDK deployment completed; ingress, tools and workflow-task functions have the real phone ID and successful updates. |
 | Seed | Four items and two distinct phone identities were seeded. For the second take, the owner authorized swapping buyer/seller roles and restocking the Zoom H6; both original and new order histories were preserved. The Zoom H6 is now out of stock. Both identities have used their one-refund allowance for 30 days. Local `.env` still names the original roles, so judge fixtures need reconciliation before another seeded run. No refund allowance or audit record was reset. |
 | Hosted API | Both live takes completed the deployed checkout for a simulated $108 purchase. The signed mock-provider confirmation advanced each order to `HELD`. |
-| Tests | 84 tests passed on `2ea529b`, including the previous authorization, workflow, packaging, identity, SDK, media, enrolment, short-code, knowledge retrieval, event and seven-stack IAM checks. Five additional cases cover the shorter seller alert and recent WhatsApp dispatch routing, including the RCS-photo exclusion and stale/future timestamps. |
+| Tests | 120 tests pass on the re-record fixes (113 on `d33a79c`). Earlier: 84 tests passed on `2ea529b`, including the previous authorization, workflow, packaging, identity, SDK, media, enrolment, short-code, knowledge retrieval, event and seven-stack IAM checks. Five additional cases cover the shorter seller alert and recent WhatsApp dispatch routing, including the RCS-photo exclusion and stale/future timestamps. |
 | Architecture | `docs/architecture.png` exported at 2400 × 1580 and saved in the existing Devpost draft. Source and asset manifest are included. |
 | Devpost story | The corrected story is saved in the Devpost draft and was reopened to verify persistence. It records the completed partial refund, real lifecycle events, received SES evidence packs, the model's actual photo verdict, missing buyer SMS and unsupported RCS handsets. Payments are disclosed as simulated; no supervisor approval or policy denial is claimed for this take. |
 | ACE campaign | Opportunity `O30313007` was created on 2026-10-25, but its marketing source remains `None` and the required “AWS CDS Agentic AI Hackathon -Sept. 2026” campaign is missing. Direct edits are locked while AWS reviews the submitted opportunity. The owner-authorized Partner Central Support request to add the campaign or enable edits was sent; its last observed status was `New`. `AwsFundingUsed=No` is confirmed. A pending support case does not satisfy the campaign requirement. |

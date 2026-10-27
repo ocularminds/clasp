@@ -207,25 +207,32 @@ scan, not a seller message, records dispatch. RCS stays configured but **unteste
 
 Before recording:
 
-- **Deploy this branch** (`make deploy`, then `make agent-deploy` for the new prompt and tools, then `make kb-sync`
-  for the regenerated policy document). Set `COURIER_MODE=manual` in `.env` for the recording so the courier step is
+- **Deploy master** (`make deploy`, then `make agent-deploy` for the prompt and tools, then `make kb-sync` for the
+  policy document). The autonomous flow was first deployed on 27 October. Set `COURIER_MODE=manual` in `.env` for the recording so the courier step is
   on camera; set it back to `auto` for judges.
 - **Decionis AgentSafe gateway (enforcement).** With `AGENTSAFE_URL` set, an enforcing gateway is the only way to a
-  decision: if it can't answer, the request is denied as `decionis_unavailable` and nothing moves. A payment hold
-  answers the PSP with 503 so it retries, and the seller's settlement retries in Step Functions. Set it up in this
+  decision: if it can't answer, the request is denied as `decionis_unavailable` and nothing moves. The checkout page
+  then tells the buyer the payment didn't go through and they can press Pay again (the mock PSP doesn't redeliver);
+  the seller's settlement retries in Step Functions. Clasp's tenant is `clasp` at `https://clasp.decionisedge.com`
+  (its `/_agentsafe/readyz` reports `ENFORCEMENT`; the older `dci` host is still in shadow). Set it up in this
   order:
-  1. Rotate the `dci` tenant key (the previous one is recorded as lost) and store it with
+  1. Store the `clasp` tenant key with
      `aws secretsmanager put-secret-value --secret-id clasp/dev/decionis-tenant-key --secret-string "$KEY"`.
   2. Set the tenant's `upstream` to the origin of `$API_BASE_URL`. The gateway relays the same path, so calls to
-     `https://dci.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
+     `https://clasp.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
   3. Set its `upstreamCredential` to header `authorization` with the file contents `Bearer <value of
      clasp/dev/agentsafe-upstream-token>`. An enforcing gateway drops the agent's own value and sets this one.
-  4. Put the origin proof from `make upstream-proof TENANT=dci ORG=<organization uuid>` in `.env` as
-     `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://dci.decionisedge.com` and
+  4. Put the origin proof from `make upstream-proof TENANT=clasp ORG=<organization uuid>` in `.env` as
+     `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://clasp.decionisedge.com` and
      `AGENTSAFE_GATEWAY_MODE=enforcement`, and run `make deploy`. Clasp serves the proof at
      `/.well-known/agentsafe-upstream`.
   5. Run `make gateway-check`, which reads the gateway's mode and relays one unevaluated GET with the tenant key.
-     Then confirm the first decision in `make decisions` shows engine `decionis-gateway:enforcement`.
+     `make gateway-check` doesn't send a decision, so it doesn't prove the upstream credential. Before recording,
+     run one throwaway order to `HELD` and confirm in `make decisions` that the hold shows engine
+     `decionis-gateway:enforcement`. If the checkout says the payment didn't go through, read the adapter's
+     `agentsafe.gateway_unavailable` log: `upstream HTTP 401` means the gateway's `upstreamCredential` doesn't
+     match `clasp/dev/agentsafe-upstream-token`. The same run warms the path, so the first take doesn't wait on
+     cold starts.
 
   The tenant's Decionis policy should allow or block Clasp's `POST /decide` calls and leave human review to Clasp.
   A call it holds (`202 ESCALATE`) becomes a Clasp escalation, but the same call made again after the seller
