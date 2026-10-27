@@ -1,90 +1,86 @@
-# Clasp — conversational narration
+# Clasp — final live-demo narration
 
-Read warmly, as though you are showing the product to one person. Aim for about 125–135 words
-per minute and leave the marked pauses for the on-screen actions. The timings are editing
-guides, not words to read aloud. Keep the final video under three minutes, including the
-three-second typewritten Clasp opening and five-second Clasp closing. Use real phone,
-email and console captures through the body, with a small square narrator at bottom-left.
+This is the selected original voice used in the 1:53.933 live demo for order `27e389`.
+The owner chose the completed 20% partial-refund take. The edit uses cuts of the supplied
+narration and matching face video; no new speech or narration pickups are required.
+The earlier original recording and illustrated film are preserved.
 
-This is a script for the planned live recording. Match each claim to the captured result;
-the WhatsApp workflow still needs to run successfully before the video can be submitted.
+The three-second typewritten Clasp opening is silent. Real phone recordings and labelled
+post-completion email/console captures fill the body. The narrator remains in a small
+square at bottom-left. The closing runs for five seconds.
 
-## 0:00–0:20 — Introduce the problem
+## Selected narration
 
-Buying something through chat is easy. Trusting what happens next is the hard part.
+**0:03** Buying something through chat is easy.
 
-Clasp helps a buyer and seller complete a purchase, and work things out if something goes wrong.
+**0:06** Trusting what happens next is the hard part.
 
-Today we're using WhatsApp, SMS and email. RCS is configured, but handset delivery is still untested.
+**0:09** Clasp helps a buyer and seller complete their purchase and work things out if something goes wrong.
 
-## 0:20–0:50 — Buy and confirm the hold
+**0:16** Today we are using WhatsApp, SMS, and email.
 
-I'm the buyer here, and I ask about the Zoom H6 recorder and a ten percent discount.
+**0:20** Claude on Amazon Bedrock checks the live catalog
 
-Claude, on Amazon Bedrock, checks the live catalogue through AgentCore and creates a checkout link.
+**0:23** through AgentCore and creates a checkout link.
 
-For this prototype, payments are simulated. The order is only marked as held after the payment
-service sends a signed confirmation.
+**0:27** For this prototype, payments are simulated.
 
-*[Pause while the checkout completes.]*
+**0:31** The order is only marked as held
 
-## 0:50–1:10 — Seller dispatch
+**0:34** after the payment service sends confirmation.
 
-Now the seller gets an SMS alert. They open WhatsApp and send the order number with a photo
-of the packed recorder.
+**0:38** Now the seller gets an SMS alert.
 
-Clasp records the dispatch, and sends the buyer a delivery code by SMS.
+**0:41** Clasp records the dispatch and sends the buyer a delivery code by SMS.
 
-## 1:10–1:25 — Something goes wrong
+**0:47** Clasp calls a Truce.
 
-Entering that code would release the payout, but the recorder's battery cover has arrived
-damaged. So I leave the code unused and report the damage.
+**0:49** A Truce is our engine for dispute resolution.
 
-Clasp calls a Truce.
+**0:55** The payout stays on hold.
 
-## 1:25–2:05 — Evidence and the policy boundary
+**0:57** Clasp asks for a fresh photo.
 
-The payout stays on hold.
+**1:00** The model checks the photo.
 
-Clasp asks for a fresh photo with a one-time code beside the recorder. The model checks the photo.
-A separate policy service, AgentSafe, decides what can happen.
+**1:02** A separate policy service, AgentSafe, decides what can happen.
 
-Then I ask for a thousand-dollar refund.
+**1:07** Asking doesn't give the agent permission to pay it.
 
-*[Pause on the response.]*
+**1:10** The proposal has to pass through the policy checks.
 
-Asking doesn't give the agent permission to pay it. The proposal still has to pass the policy checks.
+**1:14** Only then the executor records a refund.
 
-Instead, I ask for the full amount I paid. That's above the automatic refund limit, so it needs a supervisor.
+**1:18** The buyer and seller receive an evidence pack
 
-## 2:05–2:40 — Supervisor approval
+**1:22** showing the decision and what had happened.
 
-Over here, the supervisor gets an email with the amount, the reason, and the evidence.
+**1:25** It is one order, one approved refund
 
-They approve this specific refund using a signed link.
+**1:30** and the record, both sides can check. This is the evidence.
 
-*[Pause on the approval result.]*
+**1:35** Here is the trail in the console, the order, the policy decisions and the refund in the ledger.
 
-Only then can the executor record the refund. The buyer and seller receive an evidence pack
-showing the decision and what happened.
+**1:41** The agent moves the conversation forward.
 
-It's one order, one approved refund, and a record both sides can check.
+**1:44** Every payout needs a valid signed authorization.
 
-## 2:40–3:00 — Show the evidence
+**1:49** Clasp, nothing moves until both sides are kept whole.
 
-And here's the trail in the console: the order, the policy decisions, and the refund in the ledger.
+## Required visual context
 
-The agent moves the conversation forward. Every payout still needs a valid, signed authorization.
+- The item is the Zoom H6 recorder: $120 less 10%, with a simulated $108 payment and hold.
+- Payments are labelled simulated throughout. The spoken delivery-SMS sentence describes the AWS-accepted send. The accompanying text explicitly says the buyer did not receive that SMS in this take. The seller confirmed the hold-alert SMS, but no SMS screen was captured.
+- The fresh photo code is `4UK67C`. The recorded verdict has `code_visible`, `code_matches` and `same_item_as_dispatch` true, confidence `0.95`, and `damage_observed` false. Reported damage must not be presented as a confirmed model finding.
+- The buyer selected 20%. The actual decision is `allow`, reason `in_policy`, amount `2160` in USD minor units, under policy `2026.10.25-1`. The ledger contains `DISCOUNT`, `HOLD` and exactly one `REFUND`; there is no release.
+- Both SES evidence emails reached the shared demo mailbox in Spam. No supervisor-approval email is substituted.
+- The two available iPhones were tested and remain unsupported for RCS. WhatsApp carried the Truce.
+- This take includes no above-cap denial, full refund or supervisor approval. Those original narration passages are omitted.
+- The seller recording still shows the WhatsApp Invite footer. It proves receipt of the dispatch reply and Truce notice, not a functioning compose box.
+- Email/console excerpts are labelled as reviews of the completed order. The signed-authorization explanation reflects the deployed AgentSafe/executor behavior; raw signed tokens are excluded.
 
-Clasp: nothing moves until both sides are kept whole.
-
----
-
-If the live log shows an actual AgentSafe denial for the $1,000 proposal, the boundary line can be:
-“AgentSafe refuses it, and the ledger hasn't changed.” If the model declines before calling the
-tool, keep the main script's wording; do not present that as a policy-service decision.
-
-The supplied narration has already been cropped and cleaned. Record the four item-specific
-replacement lines with the same framing and sound, then match their timing to the real
-workflow captures. Keep the original recording and its earlier edit intact. The older
-`demo/compose_demo.py` layout does not include these bookends or the narrator inset.
+The local delivery includes the MP4, SRT, transcript, contact sheet, export checks and exact
+source/cut manifest under `demo/recordings/live-edit/`. The three exports with seller-like
+filenames are buyer recordings, as corrected by the owner. The separate seller Truce clip
+is used for the second phone. Unrelated gallery thumbnails, contact name, account/role ARNs,
+mailbox contact details and private authorization fields are masked or excluded.
