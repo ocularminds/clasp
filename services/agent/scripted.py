@@ -6,6 +6,7 @@ import re
 
 from ..common.stores import get_stores
 from ..tools import impl as tools
+from ..workflows.tasks import STATUS_WORDS
 
 
 def _active_order(sub: str) -> dict | None:
@@ -29,21 +30,12 @@ def handle_turn(payload: dict) -> dict:
         return tools.call(name, {**args, "actor_sub": sub, "correlation_id": corr})
 
     if payload.get("actor_role") == "seller":
-        full = re.search(r"ord_[a-f0-9]{6,}", low)
-        short = re.search(r"\b([a-f0-9]{6})\b", low)
-        ref = full.group(0) if full else (short.group(1) if short else None)
-        if payload.get("media_keys"):
-            r = run("record_dispatch", photo_key=payload["media_keys"][0], **({"order_id": ref} if ref else {}))
-            if r.get("status") == "DISPATCHED":
-                return {"text": f"Dispatch recorded for order {r['order_id'][-6:]}. The buyer has been sent a delivery code by SMS.",
-                        "order_id": r["order_id"], "tools_called": called}
-            return {"text": f"I couldn't record dispatch: {r.get('error')}", "tools_called": called}
         mine = run("my_orders")["orders"]
-        held = [o for o in mine if o["status"] == "HELD"]
-        if held:
-            return {"text": "Orders waiting for dispatch: " + ", ".join(f"{o['short_code']} ({o['item']}, {o['amount']})" for o in held)
-                    + ". Send a photo of the packed parcel to record dispatch.", "tools_called": called}
-        return {"text": "You have no orders waiting for dispatch right now.", "tools_called": called}
+        if mine:
+            return {"text": "Your recent orders: " + ", ".join(f"{o['short_code']} ({o['item']}, {o['status_words']})" for o in mine)
+                    + ". Nothing is needed from you: a courier collects each parcel, and you'll get an email if a decision needs you.",
+                    "tools_called": called}
+        return {"text": "You have no orders right now.", "tools_called": called}
 
     if button.get("id", "").startswith("truce:") and order:
         kind = button["id"].split(":")[-1]
@@ -54,24 +46,31 @@ def handle_turn(payload: dict) -> dict:
         r = run({"refund": "propose_refund", "credit": "propose_credit", "replacement": "propose_replacement"}[opt["action"]],
                 order_id=order["order_id"], **({"amount_minor": opt["amount_minor"]} if opt["action"] != "replacement" else {}))
         if r.get("executed"):
-            return {"text": f"Done: {opt['label']} ({r['amount']}). You'll get an evidence pack by email.", "tools_called": called}
-        return {"text": f"I couldn't do that: {r.get('reason') or r.get('error')}", "tools_called": called}
+            return {"text": f"Done: {opt['label']}" + (f" ({r['amount']})" if opt["amount_minor"] else "") + ". The evidence pack is on "
+                            "its way to both of you by email.", "tools_called": called}
+        if r.get("decision") == "escalate":
+            return {"text": f"{r.get('message')} Nothing has been paid yet; I'll message you here with the answer.", "tools_called": called}
+        return {"text": f"I couldn't do that: {r.get('message') or r.get('error')}", "tools_called": called}
 
     if any(w in low for w in ("available", "buy", "bag", "price", "discount")) and not order:
         item = run("get_item", item_id="item_bag")
         o = run("start_order", item_id=item["item_id"])
-        parts = [f"'{item['name']}' is in stock at {item['price']}."]
+        parts = [f"Yes, the {item['name']} is in stock at {item['price']}."]
         if "discount" in low:
             d = run("propose_discount", order_id=o["order_id"], percent=10)
-            parts.append(f"I can give 10% off ({'applied' if d.get('executed') else d.get('reason')}).")
+            parts.append(f"I can take 10% off. {d.get('message')}")
         co = run("create_checkout", order_id=o["order_id"])
-        parts.append(f"Pay securely here: {co['checkout_url']}")
+        parts.append(f"Pay securely here: {co['checkout_url']} (card details never go in this chat).")
         return {"text": " ".join(parts), "order_id": o["order_id"], "tools_called": called}
+
+    if order and re.search(r"\b(never (got|arrived|came)|didn'?t (get|receive)|no code)\b", low) and order.get("status") == "DISPATCHED":
+        r = run("resend_delivery_code", order_id=order["order_id"])
+        return {"text": r.get("message") or r.get("error", ""), "tools_called": called}
 
     if order and re.fullmatch(r"[A-Za-z0-9]{6}", text) and order.get("status") == "DISPATCHED":
         r = run("confirm_delivery", order_id=order["order_id"], code=text)
-        return {"text": "Thanks! Delivery confirmed and the seller has been paid." if r.get("executed")
-                else r.get("message") or r.get("reason", "That code didn't work."), "tools_called": called}
+        return {"text": "Thanks! Delivery confirmed, and the seller's payout has been released." if r.get("executed")
+                else r.get("message") or "That code didn't work.", "tools_called": called}
 
     m = re.search(r"refund (?:me )?\$?([\d,]+)", low)
     if order and m and order.get("status") in {"DISPUTED", "ESCALATED"}:
@@ -80,21 +79,23 @@ def handle_turn(payload: dict) -> dict:
         if r.get("decision") == "deny":
             opts = run("get_truce_options", order_id=order["order_id"])
             b = run("offer_options", order_id=order["order_id"], option_kinds=[o["kind"] for o in opts["options"]])
-            return {"text": f"I proposed it, but policy denied it: {r['reason']}. Here is what I can do:",
-                    "buttons": b["buttons"], "tools_called": called}
+            return {"text": f"I asked, and policy said no: {r['message']} Here's what I can do:", "buttons": b["buttons"],
+                    "tools_called": called}
         if r.get("decision") == "escalate":
-            return {"text": "That's above my limit; a supervisor has been asked to approve it.", "tools_called": called}
-        return {"text": f"Refund of {r['amount']} executed.", "tools_called": called}
+            return {"text": f"{r['message']} Nothing has been paid yet; I'll message you here with the answer.", "tools_called": called}
+        return {"text": f"Refund of {r['amount']} issued.", "tools_called": called}
 
     if order and any(w in low for w in ("damaged", "torn", "broken", "wrong", "problem")) and order.get("status") == "DISPATCHED":
         r = run("report_problem", order_id=order["order_id"], description=text)
-        return {"text": f"I'm sorry. Clasp has called a Truce: your payment stays held. {r.get('instruction', '')}", "tools_called": called}
+        return {"text": f"I'm sorry. When something goes wrong, Clasp calls a Truce: the seller's payout stays on hold. "
+                        f"{r.get('instruction', '')}", "tools_called": called}
 
     if order and payload.get("media_keys") and order.get("status") == "DISPUTED":
-        r = run("verify_evidence", order_id=order["order_id"], photo_key=payload["media_keys"][0])
-        return {"text": "Evidence verified. Tell me how you'd like to resolve it." if r.get("challenge_verified")
-                else f"I couldn't verify the photo: {r.get('notes') or r.get('error')}", "tools_called": called}
+        r = run("verify_evidence", order_id=order["order_id"], media_key=payload["media_keys"][0])
+        return {"text": "Thanks, the code checks out. How would you like to settle this?" if r.get("challenge_verified")
+                else f"I couldn't verify that: {r.get('notes') or r.get('error')}", "tools_called": called}
 
     if order:
-        return {"text": f"Your order {order['order_id'][-6:]} is {order['status']}. How can I help?", "tools_called": called}
+        words = STATUS_WORDS.get(order["status"], order["status"].lower())
+        return {"text": f"Your order {order['order_id'][-6:]} is {words}. How can I help?", "tools_called": called}
     return {"text": "Hi, I'm Clasp. Ask me about an item to get started.", "tools_called": called}

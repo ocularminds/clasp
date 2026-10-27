@@ -32,6 +32,9 @@ def render(policy: dict | None = None) -> str:
     ladder = (p.get("truce") or {}).get("ladder", [])
     authz = p.get("authorization", {})
     esc = p.get("escalation", {})
+    stages = esc.get("stages") or [{"role": esc.get("approver_role", "supervisor"), "ttl_seconds": esc.get("approval_link_ttl_seconds", 0)}]
+    drift = p.get("drift", {})
+    dev = drift.get("evidence", {})
     vel = refund.get("velocity", {})
     cap = fmt(int(refund.get("auto_cap_minor", 0)), cur)
     lines = [
@@ -40,13 +43,14 @@ def render(policy: dict | None = None) -> str:
         "## Overview",
         "Clasp holds the buyer's payment from purchase to confirmed delivery. The seller is paid only when the buyer confirms "
         "delivery with a one-time code. If something goes wrong, Clasp calls a Truce: the payout stays held, evidence is "
-        "collected, and compensation is chosen from a fixed ladder. The assistant can propose a discount, hold, release, refund, "
-        "store credit or replacement, but it has no authority to move money. Every proposal is decided by AgentSafe, the policy "
-        "service, which allows it, denies it with a reason, or escalates it to a human supervisor.",
+        "collected, and compensation is chosen from a fixed ladder. The assistant can propose a discount, refund, store credit or "
+        "replacement, but it has no authority to move money. Every proposal is decided by Decionis AgentSafe, the policy "
+        "service, which allows it, denies it with a reason, or escalates it to a human: the seller first, then a Clasp supervisor. "
+        "Sellers are never asked to do anything in the chat; they are contacted only when a decision needs them.",
         "",
         "## Who can act on an order",
-        "Only the buyer who placed an order can ask for a discount, confirm delivery or open a dispute on it, and only its seller "
-        "can record dispatch. Identity comes from the verified phone number the message was sent from, never from what the "
+        "Only the buyer who placed an order can ask for a discount, confirm delivery or open a dispute on it. Dispatch is recorded "
+        "by the courier's signed pickup scan, not by a message. Identity comes from the verified phone number the message was sent from, never from what the "
         "message says. A payment is confirmed only by the payment provider's signed webhook; screenshots and promises are not payment.",
         "",
         "## Discounts",
@@ -56,19 +60,21 @@ def render(policy: dict | None = None) -> str:
         "",
         "## Payment hold",
         f"When the provider confirms payment, the full order amount is placed on hold (it must equal the order amount; required "
-        f"evidence: {', '.join(hold.get('required_evidence', []))}). The seller is told that funds are secured by the provider and "
-        "may dispatch.",
+        f"evidence: {', '.join(hold.get('required_evidence', []))}). The seller is told that funds are secured by the provider, "
+        "and a courier pickup is booked.",
         "",
         "## Delivery and release",
-        "After the seller records dispatch with a photo, the buyer receives a one-time delivery code by SMS. Giving that code to "
+        "When the courier scans the pickup with a parcel photo, the buyer receives a one-time delivery code by text message (or in "
+        "the WhatsApp chat if a text can't be delivered). Giving that code to "
         f"the assistant releases the held amount to the seller (states: {', '.join(release.get('allowed_states', []))}; required "
         f"evidence: {', '.join(release.get('required_evidence', []))}). The release always equals the held amount. A wrong code "
         "releases nothing.",
         "",
         "## Truce: how a dispute works",
         "If the buyer reports damage or a wrong item after dispatch, Clasp opens a Truce. The payout stays held. The buyer gets a "
-        "fresh one-time challenge code and must send one live photo showing the code written next to the item. The assistant "
-        "compares it with the seller's dispatch photo and reports whether the code is visible and matches, whether it is the same "
+        "fresh one-time challenge code and must send one live photo, or a video under 30 seconds, showing the code written next to "
+        "the item within 15 minutes. The assistant compares it with the courier's pickup photo and reports whether the code is "
+        "visible and matches, whether it is the same "
         "item, and whether damage is visible. That report is evidence only; AgentSafe decides. No refund, credit or replacement "
         f"is possible until the challenge is verified (required evidence: {', '.join(refund.get('required_evidence', []))}).",
         "",
@@ -84,7 +90,7 @@ def render(policy: dict | None = None) -> str:
         "## Refund limits",
         f"A refund is allowed automatically when the challenge is verified, the amount is within what is held, and the amount is "
         f"at most {cap} and at most {_pct(refund.get('auto_cap_percent_of_order', 0))} of the order value. Anything above that is "
-        f"escalated to a supervisor ({refund.get('above_cap', 'escalate')}). A refund can never exceed the amount held for the "
+        f"escalated for human approval ({refund.get('above_cap', 'escalate')}). A refund can never exceed the amount held for the "
         f"order. Each buyer may receive at most {vel.get('max_per_buyer')} refund in any {vel.get('window_days')}-day period; "
         "further refund proposals are denied for velocity.",
         "",
@@ -94,11 +100,27 @@ def render(policy: dict | None = None) -> str:
         f"A replacement item moves no money (zero amount) and also requires verified evidence. Both are possible only in a Truce "
         f"(states: {', '.join(repl.get('allowed_states', []))}).",
         "",
-        "## Supervisor approval",
-        f"Above-cap refunds and credits are sent to a {esc.get('approver_role', 'supervisor')} by email with signed Approve and "
-        f"Reject links that expire after {int(esc.get('approval_link_ttl_seconds', 0)) // 3600} hours. An approval is bound to one "
-        "order, one amount and one decision; it cannot be reused or edited. If the supervisor rejects, the order returns to the "
-        "Truce and the ladder options remain available. While an order is escalated, nothing else moves on it.",
+        "## Policy drift",
+        "Some requests are within the limits but still go to a human instead of executing automatically:",
+        f"- repeated denials: the order already has {drift.get('max_denials_per_order')} or more denied proposals;",
+        f"- inconclusive evidence: confidence below {dev.get('min_confidence')}"
+        + (", no damage visible" if dev.get("require_damage_observed") else "")
+        + (", or the item does not match the pickup photo" if dev.get("require_same_item") else "") + ";",
+        "- a policy change: the policy in force differs from the one that authorized the payment hold;",
+        "- an amount that is not on the compensation ladder.",
+        "",
+        "## Human approval: seller first, then a supervisor",
+        "Escalated refunds, credits and replacements go first to the "
+        + ", then to a ".join(f"{s.get('role')} (signed email links valid {int(s.get('ttl_seconds', 0)) // 3600} hours)" for s in stages)
+        + ". If the seller rejects or does not answer in time, a Clasp supervisor decides. Each link opens a confirmation page "
+        "first. An approval is bound to one order, one amount, one decision and one stage; it cannot be reused or edited. If the "
+        "supervisor rejects, the order returns to the Truce and the ladder options remain available. While an order is "
+        "escalated, nothing else moves on it.",
+        "",
+        "## Settlement",
+        "After a partial refund or store credit, the rest of the held payment is released to the seller automatically, as its own "
+        "AgentSafe decision. After a replacement, a courier collects the replacement and the payout is released when the buyer "
+        "confirms its delivery. After a full refund, nothing is paid out.",
         "",
         "## Authorizations",
         f"Every allowed action is a signed authorization ({authz.get('algorithm')}) that lives for {authz.get('ttl_seconds')} seconds "

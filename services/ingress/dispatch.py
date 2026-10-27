@@ -14,6 +14,7 @@ from ..common.config import settings
 from ..common.ids import correlation_id as new_corr
 from ..common.log import Log
 from ..common.media import get_media
+from ..common.stores import get_stores
 from ..notify import router as notify
 from .identity import auto_enrol, resolve_sub
 from .normalize import Inbound
@@ -73,12 +74,35 @@ def fetch_url_media(inbound: Inbound) -> list[str]:
     return keys
 
 
+def collect_notices(sub: str, role: str, limit: int = 8) -> list[dict]:
+    """What the workflow told this person outside the chat since their last message (dispatch notice, SMS code sent,
+    approvals). Codes are never in these memos. Marked seen once handed to the agent, so the turn prompt — and with
+    it AgentCore Memory — carries one continuous conversation across WhatsApp, SMS, RCS and email."""
+    stores = get_stores()
+    try:
+        orders = stores.orders_for_seller(sub) if role == "seller" else stores.orders_for_buyer(sub)
+    except Exception as e:  # noqa: BLE001 — context is a nicety; never block the turn
+        log.warn("ingress.notices_failed", error=str(e))
+        return []
+    out: list[dict] = []
+    for o in orders[:10]:
+        notices = list(o.get("notices") or [])
+        fresh = [n for n in notices if n.get("role") == role and not n.get("seen")]
+        if not fresh:
+            continue
+        out += [{"order": o["order_id"][-6:], "channel": n.get("channel"), "memo": n.get("memo"), "ts": n.get("ts", 0)} for n in fresh]
+        ids = {n.get("id") for n in fresh}
+        stores.update_order(o["order_id"], {"notices": [{**n, "seen": True} if n.get("id") in ids else n for n in notices]})
+    return sorted(out, key=lambda n: n["ts"])[-limit:]
+
+
 def build_agent_payload(inbound: Inbound, sub: str, party: dict | None, media_keys: list[str], corr: str) -> dict:
+    role = (party or {}).get("role", "buyer")
     return {
         "channel": inbound.channel, "from": inbound.sender, "text": inbound.text, "media_keys": media_keys,
-        "button": inbound.button, "actor_sub": sub, "actor_role": (party or {}).get("role", "buyer"),
+        "button": inbound.button, "actor_sub": sub, "actor_role": role,
         "actor_name": (party or {}).get("name"), "session_id": session_id_for(sub), "correlation_id": corr,
-        "message_id": inbound.message_id, "received_at": clock.now(),
+        "message_id": inbound.message_id, "received_at": clock.now(), "notices": collect_notices(sub, role),
     }
 
 
@@ -131,7 +155,8 @@ def handle_inbound(inbound: Inbound) -> dict:
     if not sub:
         ilog.warn("ingress.unknown_sender")
         notify.send(channel=inbound.channel, to=inbound.sender, correlation_id=corr,
-                    text="Hi! This number isn't registered with Clasp yet. Ask the marketplace to add you, then message again.")
+                    text="Hi, this is Clasp. This number isn't registered with us yet. Please ask the marketplace to add it, "
+                         "then message again.")
         return {"status": "unknown_sender"}
     media_keys = fetch_whatsapp_media(inbound) if inbound.channel == "whatsapp" else fetch_url_media(inbound)
     payload = build_agent_payload(inbound, sub, party, media_keys, corr)

@@ -55,11 +55,12 @@ def test_failed_verdict_blocks_refund(stores, kms, kms_key, agentsafe, tmp_path,
     set_media(media)
     media.put("live/fake.jpg", b"\xff\xd8\xff")
     subs = seed(stores)
-    buyer, seller = subs["buyer_demo"], subs["seller_demo"]
+    buyer = subs["buyer_demo"]
     try:
         o = tools.start_order("item_bag", actor_sub=buyer)
         pay(tools.create_checkout(o["order_id"], actor_sub=buyer)["checkout_url"].rsplit("/", 1)[-1])
-        tools.record_dispatch(o["order_id"], actor_sub=seller, photo_key="d.jpg")
+        from services.courier_mock.courier import scan_pickup
+        scan_pickup(stores.get_order(o["order_id"]), b"\xff\xd8\xff parcel")
         tools.report_problem(o["order_id"], "torn", actor_sub=buyer)
         monkeypatch.setenv("EVIDENCE_STUB_JSON", json.dumps({"code_visible": True, "code_matches": False, "same_item_as_dispatch": True,
                                                              "damage_observed": True, "confidence": 0.95, "notes": "code reads 999999"}))
@@ -70,3 +71,32 @@ def test_failed_verdict_blocks_refund(stores, kms, kms_key, agentsafe, tmp_path,
         assert [e["type"] for e in stores.ledger_entries(o["order_id"])] == ["HOLD"]
     finally:
         set_driver(None); set_executor(None); set_notifier(None); set_media(None)
+
+
+def test_short_video_evidence_goes_to_the_video_model_without_the_text_guardrail(monkeypatch):
+    from services.tools import evidence
+
+    calls = []
+
+    class FakeBedrock:
+        def converse(self, **kw):
+            calls.append(kw)
+            return {"output": {"message": {"content": [{"text": json.dumps({
+                "code_visible": True, "code_matches": True, "same_item_as_dispatch": True, "damage_observed": True,
+                "confidence": 0.9, "notes": "code held beside the strap"})}]}}}
+
+    monkeypatch.setenv("EVIDENCE_MODE", "bedrock")
+    monkeypatch.setenv("GUARDRAIL_ID", "gr-1")
+    monkeypatch.setenv("BEDROCK_VIDEO_MODEL_ID", "us.amazon.nova-pro-v1:0")
+    monkeypatch.setattr("services.common.aws.client", lambda name: FakeBedrock())
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
+    v = evidence.analyze("AB12CD", b"\xff\xd8\xff pickup", mp4)
+    assert v["code_matches"] is True
+    kw = calls[-1]
+    assert kw["modelId"] == "us.amazon.nova-pro-v1:0" and "guardrailConfig" not in kw
+    blocks = kw["messages"][0]["content"]
+    assert any("video" in b and b["video"]["format"] == "mp4" for b in blocks)
+    assert any("image" in b for b in blocks)  # the pickup photo is still the reference
+    photo = evidence.analyze("AB12CD", None, b"\xff\xd8\xff live")
+    assert calls[-1]["modelId"] != "us.amazon.nova-pro-v1:0" and calls[-1]["guardrailConfig"]["guardrailIdentifier"] == "gr-1"
+    assert photo["confidence"] == 0.9

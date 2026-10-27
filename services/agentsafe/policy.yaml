@@ -1,6 +1,6 @@
 # Clasp reference policy for the AgentSafe adapter. Versioned; loaded at cold start.
 # Demo defaults — every number here is a knob, not a law.
-version: "2026.10.25-1"
+version: "2026.10.27-1"
 
 authorization:
   algorithm: ES256          # compact JWS signed by a KMS ECC_NIST_P256 key
@@ -13,6 +13,7 @@ identity:
   binding_required: true    # actor_sub must equal the order owner for every buyer action
   system_actors:            # non-human actors allowed for specific actions
     hold: ["system:psp"]
+    settle: ["system:workflow"]
 
 actions:
   discount:
@@ -25,6 +26,10 @@ actions:
   release:
     allowed_states: [DISPATCHED, DELIVERED]
     required_evidence: [delivery_code_verified]
+    must_equal: held_amount
+  settle:                             # after a partial refund or credit, the rest of the hold goes to the seller
+    allowed_states: [RESOLVED_PARTIAL_REFUND, RESOLVED_CREDIT]
+    required_evidence: [truce_resolved]
     must_equal: held_amount
   refund:
     allowed_states: [DISPUTED, ESCALATED]
@@ -53,6 +58,19 @@ truce:
     - { kind: replacement,    action: replacement,              label: "Replacement item" }
     - { kind: store_credit,   action: credit,      percent: 30, label: "30% store credit" }
 
+# Policy drift: signals that send an otherwise in-policy Truce resolution to a human instead of executing it.
+drift:
+  max_denials_per_order: 3            # repeated denied proposals on one order (pressure or injection)
+  evidence:                           # inconclusive evidence
+    min_confidence: 0.8
+    require_damage_observed: true
+    require_same_item: true
+  policy_version_change: true         # the policy in force differs from the one that authorized the hold
+  off_ladder: true                    # a refund or credit amount that is not on the compensation ladder
+
+# Escalations go to the seller first (it is their payout), then to a platform supervisor
+# if the seller rejects or does not answer in time.
 escalation:
-  approver_role: supervisor
-  approval_link_ttl_seconds: 172800   # 48h
+  stages:
+    - { role: seller,     ttl_seconds: 86400 }    # 24h
+    - { role: supervisor, ttl_seconds: 172800 }   # 48h

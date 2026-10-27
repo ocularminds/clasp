@@ -88,12 +88,16 @@ For the Anthropic model in `BEDROCK_MODEL_ID`, complete the Bedrock first-use fo
 access with a small Converse request. The default is the US inference profile
 `us.anthropic.claude-sonnet-4-5-20250929-v1:0`; use the same model for evidence in this demo.
 
-### Leaving the SES and SMS sandboxes (needed before judges' phones and mailboxes work)
+### Leaving the SES and SMS sandboxes (done)
 
-While SES is in its sandbox only verified identities receive mail, and while the SMS account is in its
-sandbox only verified destination numbers receive texts. The demo mailbox and the two demo phones are
-verified; a judge's are not. Request production access for both as early as possible (approval is
-typically within one business day) and keep verifying individual numbers until it lands.
+Both are out of their sandboxes: SES production access was granted on 26 October, and SMS production access
+on 27 October with a $25 monthly spending limit. Unverified numbers and mailboxes now receive Clasp's texts and
+email. The commands below are kept as a record of how it was done.
+
+The SMS origination identity is the Swedish `CLASP` sender ID. Alphanumeric sender IDs are country-specific, and
+the US and Canada don't accept them, so a text to a non-Swedish judge's number is expected to fail until an
+origination identity for that country is in the pool. When an SMS send is refused, the buyer's delivery code
+goes to their WhatsApp chat instead, and seller notices go by email.
 
 SES production access is one API call:
 
@@ -195,25 +199,47 @@ If a phone ID, pool, sender ID or other channel value changes after deployment, 
 and `make deploy` again so the Lambda environment picks it up. Never publish `.env` or toolkit
 state. Confirm the runtime is `READY` before starting a phone conversation.
 
-## 3. First real phone run
+## 3. Real phone run (autonomous flow)
 
-The agreed demo uses **two iPhones**: buyer and seller both converse on WhatsApp, SMS carries
-alerts, and a desktop email/console capture supplies the third panel. RCS stays configured but
-**untested on a supported handset**. It is not a prerequisite for this revised recording.
-Finish WhatsApp registration, save the real AWS phone/WABA IDs, bind the inbound topic and
-redeploy before beginning this sequence.
+The order runs itself: the buyer talks to Clasp on WhatsApp, the seller only receives one-way notices
+(RCS, falling back to SMS, then email) and is asked to decide only when policy escalates. A courier pickup
+scan, not a seller message, records dispatch. RCS stays configured but **untested on a supported handset**.
 
-The agreed physical item is a **Zoom H6 sound recorder with a damaged battery cover**.
-Prepare the recorder, a seller dispatch photo and paper for the fresh challenge code.
-Use real photos; the simulator's placeholder JPEG bytes cannot
-exercise Bedrock vision.
+Before recording:
 
-Open three recording views: buyer phone, seller phone, and the supervisor email/console panel.
-Record both iPhone screens in portrait. Record the email panel at a readable desktop zoom with
-only the relevant Clasp message open. Start one visible timer or clap to synchronize the
-captures. Disable unrelated notification previews before recording. Both phone owners must
-initiate a WhatsApp chat with the business number so each has an active customer-service window.
-The seller can begin with “I'm ready to dispatch my next Clasp order.”
+- **Deploy this branch** (`make deploy`, then `make agent-deploy` for the new prompt and tools, then `make kb-sync`
+  for the regenerated policy document). Set `COURIER_MODE=manual` in `.env` for the recording so the courier step is
+  on camera; set it back to `auto` for judges.
+- **Decionis AgentSafe gateway (enforcement).** With `AGENTSAFE_URL` set, an enforcing gateway is the only way to a
+  decision: if it can't answer, the request is denied as `decionis_unavailable` and nothing moves. A payment hold
+  answers the PSP with 503 so it retries, and the seller's settlement retries in Step Functions. Set it up in this
+  order:
+  1. Rotate the `dci` tenant key (the previous one is recorded as lost) and store it with
+     `aws secretsmanager put-secret-value --secret-id clasp/dev/decionis-tenant-key --secret-string "$KEY"`.
+  2. Set the tenant's `upstream` to the origin of `$API_BASE_URL`. The gateway relays the same path, so calls to
+     `https://dci.decionisedge.com/decide` reach `$API_BASE_URL/decide`.
+  3. Set its `upstreamCredential` to header `authorization` with the file contents `Bearer <value of
+     clasp/dev/agentsafe-upstream-token>`. An enforcing gateway drops the agent's own value and sets this one.
+  4. Put the origin proof from `make upstream-proof TENANT=dci ORG=<organization uuid>` in `.env` as
+     `AGENTSAFE_UPSTREAM_PROOF`, set `AGENTSAFE_URL=https://dci.decionisedge.com` and
+     `AGENTSAFE_GATEWAY_MODE=enforcement`, and run `make deploy`. Clasp serves the proof at
+     `/.well-known/agentsafe-upstream`.
+  5. Run `make gateway-check`, which reads the gateway's mode and relays one unevaluated GET with the tenant key.
+     Then confirm the first decision in `make decisions` shows engine `decionis-gateway:enforcement`.
+
+  The tenant's Decionis policy should allow or block Clasp's `POST /decide` calls and leave human review to Clasp.
+  A call it holds (`202 ESCALATE`) becomes a Clasp escalation, but the same call made again after the seller
+  approves would be held again. The request body carries `action`, `amount_minor`, `currency`, `evidence` and,
+  on an approval, `context.approval_stage`, so the policy can tell these calls apart.
+- **Use a buyer identity that hasn't had a refund in 30 days.** Both seeded demo identities used their one refund on
+  26 October, so a refund for them is denied for velocity. Message the business number from a third WhatsApp number:
+  `AUTO_ENROL_CHANNELS=whatsapp` enrols it as a buyer on first contact. Give the assistant an email address in the
+  chat so the receipt and evidence pack reach a mailbox you can show.
+- **SMS.** Production access is granted with a $25 monthly limit, so the delivery code reaches any Swedish number
+  by text. If a send is refused (another country, or the limit), the code arrives in WhatsApp and seller notices by
+  email. Narrate whichever channel actually carried each message.
+- Prepare the item (the camera bag or lens; the Zoom H6 is out of stock), paper for the challenge code, and a phone
+  to act as the courier.
 
 Start the ingress and decision logs in separate terminals:
 
@@ -222,53 +248,33 @@ aws logs tail /aws/lambda/clasp-dev-ingress --region us-east-1 --since 10m --fol
 make decisions
 ```
 
-1. From the **buyer handset**, message the WhatsApp business number: “Is the Zoom H6 sound
-   recorder available? Can I get 10% off?” The first reply should come from Strands using the
-   live Bedrock model. Keep the conversation inside WhatsApp's customer-service window.
-2. Accept the order and open the hosted checkout link. The button creates a **simulated payment**;
-   no card or bank credentials are needed. Confirm the order reaches `HELD` before dispatch.
-3. On the seller phone, show the SMS hold alert. The RCS router falls back to SMS for this
-   unverified RCS destination. Open the seller's WhatsApp chat with Clasp and send the real
-   parcel photo with “Dispatch order [the six-character code from the SMS]”. The full ID also
-   works, and when the seller has exactly one order awaiting dispatch the photo alone is enough:
-   `record_dispatch` resolves the seller's own orders by short code, and `my_orders` lists a
-   seller's orders too.
-4. Confirm `ingress.record` and `agent.turn.in` with `channel=whatsapp` for the seller's photo.
-   Verify the media was fetched into the configured bucket, the dispatch callback completed,
-   and the stored order reached `DISPATCHED`. Wait for the actual workflow state before
-   advancing; a tool response can precede Step Functions finishing its next task.
-5. Show the SMS delivery code on the buyer phone, then return to WhatsApp. **Do not redeem the
-   code** for this dispute scenario: redeeming it releases the payout. Say “The recorder's
-   battery cover arrived damaged.” The
-   workflow holds the payout and returns a fresh challenge. Write that exact code next to the
-   item, photograph it, and send the image through WhatsApp before the challenge expires.
-6. After evidence verification succeeds, request a $1,000 refund. Show an actual AgentSafe denial
-   and an unchanged ledger. If the model
-   declines before calling a tool, explain that accurately; do not label it a policy-service
-   decision. The deterministic simulator separately demonstrates a forced excessive proposal.
-7. Show the offered compensation options without executing a partial refund. Request the **full
-   amount actually held** instead: normally $108 after the 10% discount on the $120 recorder. Confirm
-   AgentSafe returns `escalate` and the stored order reaches `ESCALATED`, with no refund ledger entry.
-8. In the desktop panel, open the SES supervisor email for this order and follow its signed
-   Approve link. Confirm `RESOLVED_REFUND`, one `REFUND` ledger entry for the held amount, and the
-   evidence-pack email. The shared demo mailbox represents all email roles; label the approval
-   view “Supervisor” without suggesting that three different mailboxes were used.
+1. From the **buyer handset**, message the WhatsApp business number: "Is the camera bag available? Can I get 10%
+   off?" The reply comes from Strands on the live Bedrock model. Give the email address when the agent offers.
+2. Open the hosted checkout link and press Pay. It is a **simulated payment**. The page shows "Payment confirmed";
+   the buyer gets an email receipt and the seller's phone shows the one-way "Payment secured" notice.
+3. **Courier pickup.** Run `make courier ORDER=<6-character code>` and open the printed link on the courier phone.
+   Photograph the parcel and press "Scan pickup". The buyer's WhatsApp shows the pickup photo and the delivery code
+   arrives by SMS (or WhatsApp; see above). The seller does nothing.
+4. **Do not redeem the code** for the dispute scenario: redeeming it releases the payout. Tell the agent the item
+   arrived damaged. Clasp calls a Truce and returns a challenge code. Write it on paper next to the item and send one
+   photo or a video under 30 seconds within 15 minutes.
+5. Ask for a $1,000 refund. Show AgentSafe's denial, worded for the buyer in the chat ("That's more than the $108.00
+   held for this order.") and the unchanged ledger in `make decisions`. The deployed prompt always submits the
+   amount asked for.
+6. Tap **20% partial refund**. One of two things happens, and both are worth filming:
+   - the photo clearly shows damage: AgentSafe allows it, the buyer gets the refund in the chat, and the seller's
+     notice says the remaining $86.40 has been released to them;
+   - the photo doesn't clearly show damage (as in the 26 October take): this is **policy drift**. AgentSafe escalates,
+     the buyer is told the seller has been asked, and the seller's email asks them to approve. Open the link (a
+     confirmation page; nothing changes yet), press Approve, and show the buyer's WhatsApp: "the seller approved".
+   To film the above-cap path instead, ask for the full $108: it escalates to the seller; rejecting it hands the
+   decision to the supervisor email.
+7. Show the evidence pack email (outcome, who decided, the evidence check and the ledger) and the console: the
+   Step Functions graph, the decision log and the ledger (`HOLD`, `REFUND`, `RELEASE`).
 
-Do not use `make simulate --live` as evidence of a handset run. The automated simulator calls
-tools directly and uses placeholder photos; its immediate steps also do not wait for real
-Step Functions callbacks. `make simulate ARGS="--chat --live --agent llm"` is a diagnostic
-console conversation, not a phone recording.
-
-### One refund in this recording
-
-The policy permits one refund per buyer per 30 days. The accepted script therefore completes
-**one supervisor-approved refund on one order**. Do not execute a partial refund first and then
-try to film another refund using the same buyer. Do not erase a real decision or ledger entry
-to bypass the limit. A separate completed refund scenario would need a second verified buyer
-identity and another order; that is outside this two-phone recording.
-
-Each supervisor approval is bound to its proposal and expires after 48 hours. For a separate
-happy-path run, redeem the delivery code and confirm `RELEASED` instead of opening a dispute.
+Do not use `make simulate --live` as evidence of a handset run. The automated simulator calls tools directly and uses
+placeholder photos. `make simulate ARGS="--chat --live --agent llm"` is a diagnostic console conversation, not a phone
+recording.
 
 ### Optional first real RCS event
 
@@ -276,8 +282,8 @@ This remains a separate, unfinished channel check. Run it only with a supported 
 RCS destination is `VERIFIED` for the agent; the available iPhones currently lack RCS settings.
 Do not label an SMS fallback or a synthetic SNS event as a handset RCS test.
 
-On a future supported seller device, inspect the RCS hold card, tap “Upload dispatch photo,”
-and send a real photo. Check `ingress.record`, followed by `agent.turn.in` with `channel=rcs`.
+On a future supported seller device, inspect the RCS "Payment secured" card, then send the agent a message or a
+photo. Check `ingress.record`, followed by `agent.turn.in` with `channel=rcs`.
 Text events use the RCS agent ID as `destinationNumber`; taps have JSON `messageBody` with
 `postbackData`; photos have `mediaStatus=SUCCESS`, `s3Bucket`, and `s3Key`. The photo should
 arrive under `inbound/rcs/` in the configured bucket. Ingress logs field/type shape without
@@ -295,10 +301,10 @@ destinations stay `UNSUPPORTED` and the router's SMS fallback is what ships. To 
    shows: `aws pinpoint-sms-voice-v2 create-verified-destination-number --destination-phone-number "+46…" --rcs-agent-id "$RCS_AGENT_ID"`,
    then the verification call above. The destination must read `VERIFIED` **for that agent**; SMS sandbox
    verification is a different list.
-3. Put that number in `.env` as `DEMO_SELLER_PHONE`, run `make seed`, and send one order through. The funds-held
-   rich card should render with the **Upload dispatch photo** suggestion; tapping it posts
-   `dispatch:<order_id>` and the photo lands under `inbound/rcs/` in the media bucket. Watch
-   `ingress.record` then `agent.turn.in` with `channel=rcs` in the ingress logs.
+3. Put that number in `.env` as `DEMO_SELLER_PHONE`, run `make seed`, and send one order through. The "Payment
+   secured" rich card should render on the handset. It is one-way: the seller needs no reply. To see an inbound RCS
+   turn, have the seller message the agent ("my orders?") and watch `ingress.record` then `agent.turn.in` with
+   `channel=rcs` in the ingress logs.
 4. Only then change the narration line about RCS. Until a `channel=rcs` turn has been observed, the honest
    wording stays: "RCS is configured and falls back to SMS; handset delivery is untested."
 
@@ -318,14 +324,13 @@ has completed and they can no longer authorize an action.
 | Time | Picture | Narration |
 |---|---|---|
 | 0:00–0:03 | Typewritten ASCII Clasp logo | Opening narration begins. |
-| 0:03–0:20 | Two real phone views and an email/console panel | “Chat marketplaces have a trust gap. Clasp coordinates the purchase, but every action affecting money passes a separate policy check. This demo uses WhatsApp, SMS and email; RCS is configured but handset delivery is untested.” |
-| 0:20–0:50 | Buyer asks, receives 10% offer, uses mock checkout | “Claude checks live inventory through AgentCore Gateway. The checkout is a payment simulation; a signed provider webhook confirms the hold.” |
-| 0:50–1:10 | Seller SMS hold alert, then WhatsApp order ID and dispatch photo | “The seller receives an SMS alert, opens WhatsApp and sends the order ID with the parcel photo. The workflow records the dispatch.” |
-| 1:10–1:25 | Buyer SMS delivery code; then WhatsApp damage report | “Redeeming this SMS code would release the payout. The buyer reports damage before redeeming it, so Clasp calls a Truce.” |
-| 1:25–2:05 | Fresh photo of the damaged battery cover and challenge code, actual $1,000 response, full refund request | “Asking doesn't give the agent permission to pay it. The proposal still has to pass the policy checks. Refunding the amount held is above the automatic cap, so the order waits for a supervisor.” |
-| 2:05–2:40 | Same order: SES approval, refund result and evidence pack | “The supervisor sees the amount, reason and evidence before approving. The signed link authorizes this proposal only. The executor records one simulated refund, and both parties receive the evidence.” |
-| 2:40–2:55 | Console evidence: Step Functions, decisions, ledger | “Only the executor can append the ledger. It verifies the signature, exact scope, expiry and one-use nonce.” |
-| Last 5 seconds | Clasp closing animation | “Clasp: nothing moves until both sides are kept whole.” |
+| 0:03–0:20 | Buyer phone, seller phone, email/console panel | "Buying in a chat is easy. Trusting what happens next is the hard part. Clasp runs the order itself, and every action that moves money needs a signed policy decision." |
+| 0:20–0:45 | Buyer asks, receives 10% offer, simulated checkout | "Claude on Amazon Bedrock checks live stock through AgentCore and sends a checkout link. Payments are simulated; only the provider's signed confirmation puts the money on hold." |
+| 0:45–1:05 | Seller's one-way "Payment secured" notice; courier page photographs the parcel; buyer sees the pickup photo | "The seller doesn't chat. They're told the funds are secured, and a courier's signed pickup scan records dispatch. The buyer gets the pickup photo and a one-time delivery code." |
+| 1:05–1:45 | Damage report, challenge code, live photo, "$1,000" request and the denial in the chat | "When something goes wrong, Clasp calls a Truce. A fresh code next to the item proves the photo is new. Asking for a thousand dollars can fool the model into proposing it; AgentSafe denies it, with a reason." |
+| 1:45–2:25 | Buyer taps 20%; either automatic settlement, or drift → seller approval page → buyer told | Automatic: "Within policy, the Truce settles in the chat, and the rest of the payment goes to the seller." Drift: "The photo doesn't clearly show damage, so even an in-policy refund goes to the seller. They approve on a confirmation page; the buyer hears back in the chat." |
+| 2:25–2:55 | Evidence pack email; console: Step Functions, decisions, ledger | "Both sides get the evidence pack. Every decision, allowed, denied or escalated, passed through Decionis AgentSafe, and only the executor can write the ledger." |
+| Last 5 seconds | Clasp closing animation | "Clasp: nothing moves until both sides are kept whole." |
 
 If the recorded evidence differs from the script, update the narration. Show the actual decision
 and status; a saved script is not proof that the live run succeeded.

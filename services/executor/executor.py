@@ -27,6 +27,7 @@ TRANSITIONS: dict[str, tuple[list[str], str | None]] = {
     "discount": (["DRAFT", "PAYMENT_PENDING"], None),
     "hold": (["PAYMENT_PENDING"], "HELD"),
     "release": (["DISPATCHED", "DELIVERED"], "RELEASED"),
+    "settle": (["RESOLVED_PARTIAL_REFUND", "RESOLVED_CREDIT"], None),   # pay the seller what the Truce left held
     "refund": (["DISPUTED", "ESCALATED"], "RESOLVED_REFUND"),  # or RESOLVED_PARTIAL_REFUND
     "credit": (["DISPUTED", "ESCALATED"], "RESOLVED_CREDIT"),
     "replacement": (["DISPUTED", "ESCALATED"], "RESOLVED_REPLACEMENT"),
@@ -182,8 +183,11 @@ class Executor:
             return {"status": "HELD", "held_minor": a, "psp_event_id": req.metadata.get("psp_event_id"), "held_at": clock.now()}, "HOLD"
         if req.action == "release":
             return {"status": "RELEASED", "released_minor": a, "released_at": clock.now()}, "RELEASE"
+        if req.action == "settle":
+            return {"released_minor": int(order.get("released_minor", 0)) + a, "settled_at": clock.now()}, "RELEASE"
         if req.action == "refund":
-            available = int(order.get("held_minor", 0)) - int(order.get("refunded_minor", 0)) - int(order.get("credited_minor", 0))
+            available = (int(order.get("held_minor", 0)) - int(order.get("refunded_minor", 0)) - int(order.get("credited_minor", 0))
+                         - int(order.get("released_minor", 0)))
             status = "RESOLVED_REFUND" if a >= available else "RESOLVED_PARTIAL_REFUND"
             return {"status": status, "refunded_minor": int(order.get("refunded_minor", 0)) + a, "resolution": status,
                     "resolved_at": clock.now()}, "REFUND"

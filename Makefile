@@ -7,7 +7,7 @@ export JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1
 -include .env
 export
 
-.PHONY: help venv deps test lint synth diff bootstrap deploy destroy seed kb-sync simulate logs decisions agent-deploy agent-local api-local clean
+.PHONY: help venv deps test lint synth diff bootstrap deploy destroy seed kb-sync simulate courier upstream-proof gateway-check logs decisions agent-deploy agent-local api-local clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -65,6 +65,15 @@ simulate:        ## Drive a full order (buy → hold → deliver → Truce → e
 
 logs:            ## Tail Lambda logs for the stage
 	aws logs tail /aws/lambda/clasp-$(STAGE)-tools --follow --since 10m
+
+courier:         ## Courier pickup for ORDER=<code> (link to the pickup page, or PHOTO=<jpeg> to scan now)
+	$(PY) demo/courier.py $(ORDER) $(if $(PHOTO),--photo $(PHOTO),)
+
+upstream-proof:  ## Origin proof for the Decionis gateway: TENANT=dci ORG=<organization uuid>
+	$(PY) demo/gateway.py proof --tenant $(TENANT) --organization $(ORG)
+
+gateway-check:   ## Read-only check that the Decionis gateway accepts the key and reaches /decide's origin
+	$(PY) demo/gateway.py check
 
 decisions:       ## Tail the AgentSafe decision log (the final demo shot)
 	$(PY) demo/decisions.py --follow

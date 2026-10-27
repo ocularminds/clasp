@@ -1,4 +1,48 @@
-# Clasp — final live-demo narration
+# Clasp — demo narration
+
+## Re-record: the autonomous flow
+
+The re-recorded video follows the shot guide in [the runbook](RUNBOOK.md#4-three-minute-recording-script).
+The seller never chats: they receive one-way notices, and a decision reaches them only when policy escalates.
+Speak these lines over the matching shots and say only what the capture shows. If SMS was blocked and the
+code came by WhatsApp, say so; if the refund settled automatically, skip the drift lines.
+
+**0:03** Buying in a chat is easy. Trusting what happens next is the hard part.
+
+**0:10** Clasp runs the order itself, and every action that moves money needs a signed policy decision.
+
+**0:20** Claude on Amazon Bedrock checks live stock through AgentCore and sends a checkout link.
+
+**0:30** Payments are simulated. Only the provider's signed confirmation puts the money on hold.
+
+**0:45** The seller doesn't chat. They're told the funds are secured.
+
+**0:52** A courier's signed pickup scan records dispatch. The buyer gets the pickup photo and a one-time delivery code.
+
+**1:05** When something goes wrong, Clasp calls a Truce.
+
+**1:10** A fresh code written next to the item proves the photo is new.
+
+**1:20** Asking for a thousand dollars can fool the model into proposing it.
+
+**1:27** Decionis AgentSafe denies it, with a reason the buyer can read.
+
+**1:45** *(automatic)* Within policy, the Truce settles in the chat, and the rest of the payment goes to the seller.
+
+**1:45** *(drift)* The photo doesn't clearly show damage, so even an in-policy refund goes to the seller.
+
+**1:55** *(drift)* They approve on a confirmation page, and the buyer hears back in the chat.
+
+**2:25** Both sides get the evidence pack.
+
+**2:32** Every decision, allowed, denied or escalated, passed through AgentSafe, and only the executor can write the ledger.
+
+**2:50** Clasp: nothing moves until both sides are kept whole.
+
+## Earlier take (published)
+
+The video at https://www.youtube.com/watch?v=UPnOkHd2VJs shows the earlier flow, in which the seller
+dispatched by sending a WhatsApp photo. Its narration and visual notes are kept below for reference.
 
 This is the selected original voice used in the 1:53.933 live demo for order `27e389`.
 The owner chose the completed 20% partial-refund take. The edit uses cuts of the supplied
@@ -9,7 +53,7 @@ The three-second typewritten Clasp opening is silent. Real phone recordings and 
 post-completion email/console captures fill the body. The narrator remains in a small
 square at bottom-left. The closing runs for five seconds.
 
-## Selected narration
+### Selected narration
 
 **0:03** Buying something through chat is easy.
 
@@ -67,7 +111,7 @@ square at bottom-left. The closing runs for five seconds.
 
 **1:49** Clasp, nothing moves until both sides are kept whole.
 
-## Required visual context
+### Required visual context
 
 - The item is the Zoom H6 recorder: $120 less 10%, with a simulated $108 payment and hold.
 - Payments are labelled simulated throughout. The spoken delivery-SMS sentence describes the AWS-accepted send. The accompanying text explicitly says the buyer did not receive that SMS in this take. The seller confirmed the hold-alert SMS, but no SMS screen was captured.

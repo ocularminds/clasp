@@ -88,3 +88,28 @@ class DataStack(Stack):
             generate_secret_string=sm.SecretStringGenerator(password_length=48, exclude_punctuation=True),
         )
         output(self, "PSP_WEBHOOK_SECRET_ARN", self.psp_secret.secret_arn)
+
+        self.courier_secret = sm.Secret(
+            self, "CourierWebhookSecret", secret_name=f"clasp/{stage()}/courier-webhook-secret",
+            description="HMAC secret shared by the mock courier and the pickup webhook receiver",
+            generate_secret_string=sm.SecretStringGenerator(password_length=48, exclude_punctuation=True),
+        )
+        self.upstream_token = sm.Secret(
+            self, "AgentSafeUpstreamToken", secret_name=f"clasp/{stage()}/agentsafe-upstream-token",
+            description="Bearer token the Decionis AgentSafe gateway relays to Clasp's POST /decide",
+            generate_secret_string=sm.SecretStringGenerator(password_length=48, exclude_punctuation=True),
+        )
+        # Placeholder until the operator stores the real Decionis tenant key (put-secret-value); an invalid key makes
+        # the gateway answer 401 and every decision falls back to the reference service.
+        self.tenant_key = sm.Secret(
+            self, "DecionisTenantKey", secret_name=f"clasp/{stage()}/decionis-tenant-key",
+            description="AgentSafe-Tenant-Key for the Decionis hosted gateway (replace the generated placeholder)",
+            generate_secret_string=sm.SecretStringGenerator(password_length=43, exclude_punctuation=True),
+        )
+        self.secrets = [self.courier_secret, self.upstream_token, self.tenant_key]
+        self.secret_env = {"COURIER_WEBHOOK_SECRET_ARN": self.courier_secret.secret_arn,
+                           "AGENTSAFE_UPSTREAM_TOKEN_SECRET_ARN": self.upstream_token.secret_arn,
+                           "AGENTSAFE_TENANT_KEY_SECRET_ARN": self.tenant_key.secret_arn}
+        output(self, "COURIER_WEBHOOK_SECRET_ARN", self.courier_secret.secret_arn)
+        output(self, "AGENTSAFE_UPSTREAM_TOKEN_SECRET_ARN", self.upstream_token.secret_arn)
+        output(self, "AGENTSAFE_TENANT_KEY_SECRET_ARN", self.tenant_key.secret_arn)

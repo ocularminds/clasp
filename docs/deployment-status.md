@@ -8,9 +8,31 @@ confirm the reported damage. Payments remain simulated. SMS production access, t
 association, publication, judge fixture reconciliation and Devpost submission remain
 open. The completed live video is exported and verified at 1:53.933. The two available iPhones are unsupported for the RCS test.
 
+**Not yet deployed: the autonomous flow (branch `feat/autonomous-truce`).** It adds:
+
+- courier pickup scans in place of seller WhatsApp dispatch;
+- seller-then-supervisor approval;
+- policy drift escalation and settlement of the remainder to the seller;
+- the Decionis AgentSafe hosted gateway with reference fallback;
+- short-video evidence, workflow notices in the agent's context, email capture and delivery-code resend;
+- the copy rewrites.
+
+It passes the full offline suite and simulator. Nothing in the table below was re-verified against it.
+
+The owner reports the `dci` hosted gateway was promoted to enforcement on 27 October. A public readiness probe at
+02:30 UTC that day still answered `"mode":"SHADOW","authority":"decionis"`, so the promotion may not have been live yet.
+To route Clasp through it:
+- rotate the tenant key (recorded as lost);
+- set the tenant's upstream and its `upstreamCredential`;
+- serve the origin proof;
+- deploy with `AGENTSAFE_URL`;
+- run `make gateway-check`.
+
+The runbook has the steps.
+
 | Item | Evidence / current state |
 |---|---|
-| Master sync | PRs #8–#14 are merged; the main checkout is clean on `master` at `07ccdf7`. The notification changes in draft PR #15 (`2ea529b`) are also deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
+| Master sync | PRs #8–#15 are merged; `master` is at `493ec7c`. The notification changes from PR #15 (`2ea529b`) are deployed. The earlier Knowledge Base, Events and runtime deployment came from `faf3c90`. |
 | AWS login | Intended account confirmed; region `us-east-1`. The fresh `aws login` landed in the `default` profile, and the profile named in `.env` was expired, so every `make` call ran with `AWS_PROFILE=default`. That identity is the account root user; a named IAM identity would be better hygiene before judging. Credentials remain local. |
 | Bootstrap | `CDKToolkit` reached `CREATE_COMPLETE`. |
 | Seven CDK stacks | The seven-stack deployment on `faf3c90` completed at 21:08 UTC. Knowledge and Events are `CREATE_COMPLETE`; the other five stacks are `UPDATE_COMPLETE`, and `by_seller` is `ACTIVE`. A subsequent CloudFormation change set deployed the tested notification bundle from `2ea529b` at 23:04 UTC; the Workflow stack reached `UPDATE_COMPLETE` and the Lambda code hash matched the uploaded asset. |
@@ -24,7 +46,7 @@ open. The completed live video is exported and verified at 1:53.933. The two ava
 | Live WhatsApp integration | Real messages from both demo identities traversed SNS, ingress, AgentCore and Bedrock. The second take's dispatch JPEG reached S3 at 23:17:42 UTC; the order entered `DISPATCHED`. A buyer damage report opened the Truce at 23:25 UTC. The fresh photo was verified at 23:27:09 UTC with `code_visible`, `code_matches` and `same_item_as_dispatch` true, confidence 0.95 and `damage_observed` false. Earlier SDK method, E.164 and exact S3 object-key fixes are deployed. |
 | Seller WhatsApp client | The original seller's iPhone showed “Invite” despite a registered business number. An owner-authorized temporary WhatsApp Web link and app restart restored typing; that temporary linked session was then logged out. After the role swap, the new seller's received recording still shows the “no longer on WhatsApp” footer while displaying dispatch and Truce messages. The backend accepted the real dispatch; the recording does not prove that this second iPhone's compose box works. |
 | SES | Production access is **GRANTED**: 50,000 messages per 24 h at 14 per second, enforcement `HEALTHY`. Both evidence-pack emails for order `27e389` arrived in the shared demo mailbox's Spam folder at 23:27 UTC. The actual JSON attachment was downloaded and checked against the order, decisions and ledger. An above-cap supervisor approval was not exercised in the selected take. |
-| SMS sandbox | Account tier remains `SANDBOX`; both demo destinations are `VERIFIED`. The production-access request and user-approved $25/month ceiling were filed with AWS Support; the case was `Unassigned` at the last check. A fresh account check on 27 October still returned `SANDBOX` and a $1 hard/enforced ceiling; reported spend was $0.94328 at 23:20 UTC. The buyer's delivery-code SMS for `27e389` was accepted by AWS at 23:17:52 UTC but was still missing after the user checked the phone. No configuration set provides a delivery receipt. A follow-up with the message ID and quota evidence was submitted at 23:26 UTC; no retry was sent. |
+| SMS sandbox | **Update 27 October (owner-reported): SMS production access was granted with a $25 monthly spending limit.** Not re-checked from the account in this session. Earlier record: account tier remained `SANDBOX`; both demo destinations are `VERIFIED`. The production-access request and user-approved $25/month ceiling were filed with AWS Support; the case was `Unassigned` at the last check. A fresh account check on 27 October still returned `SANDBOX` and a $1 hard/enforced ceiling; reported spend was $0.94328 at 23:20 UTC. The buyer's delivery-code SMS for `27e389` was accepted by AWS at 23:17:52 UTC but was still missing after the user checked the phone. No configuration set provides a delivery receipt. A follow-up with the message ID and quota evidence was submitted at 23:26 UTC; no retry was sent. |
 | Shared pool | Active pool contains the RCS agent and Swedish `CLASP` sender ID. HELP/STOP settings match, and the two-way SNS destination is bound. |
 | Dedicated SMS number | All 31 registration fields were reviewed and submitted. Swedish long-code registration version 1 is `REVIEWING`; no dedicated number has been allocated. `CLASP` currently supports one-way SMS. |
 | RCS agent | Test registration is approved; the agent is active in `TESTING`. Brand assets and the user's chosen privacy/terms URLs are configured. |
