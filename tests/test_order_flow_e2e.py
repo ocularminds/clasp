@@ -102,6 +102,7 @@ def dispatch(w, oid: str) -> str:
     assert courier.scan_pickup(o, b"\xff\xd8\xff again")[0] == 409  # one pickup per shipment
     note = w["outbox"].last("whatsapp")
     assert note.to == "+15550000001" and "picked up by the courier" in note.text and note.media_url
+    assert "here in this chat if a text can't reach you" in note.text  # SMS may fail over to WhatsApp
     sms = w["outbox"].last("sms")
     assert sms and sms.to == "+15550000001" and len(sms.text) <= 160
     return re.search(r" is ([A-Z0-9]{6})\.", sms.text).group(1)

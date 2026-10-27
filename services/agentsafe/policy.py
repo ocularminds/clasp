@@ -320,7 +320,7 @@ def describe(policy: Policy, outcome: str, reason: str, req: dict, order: dict |
     vel = (rules.get("velocity") or {}).get("window_days", 30)
     if code == "evidence_required":
         if action == "release":
-            return "I need the delivery code from your text message first."
+            return "I need the one-time delivery code we sent you first."
         return "I need your live photo or video with the challenge code next to the item before anything can be paid."
     return {
         "amount_exceeds_held_funds": f"That's more than the {left} held for this order.",

@@ -228,7 +228,9 @@ def mark_dispatched(order_id: str, output: dict | None = None) -> dict:
              else "Here's the reference photo recorded for this shipment.")
     text = (f"Your {what} (order {short(order_id)}) has been picked up by the courier."
             + (f" {photo}" if photo_url else "")
-            + " Your delivery code is coming by text message. When the item arrives and looks right, send me that code: "
+            # The code is sent after this message, by SMS or, if that fails, in this chat (issue_delivery_code).
+            + " Your delivery code is on its way, by text message or here in this chat if a text can't reach you."
+              " When the item arrives and looks right, send me that code: "
               "it pays the seller. If anything is damaged or wrong, tell me here instead and don't send the code.")
     tell_buyer(o, text, media_url=photo_url)
     events.emit("OrderDispatched", o, has_dispatch_photo=bool(o.get("dispatch_photo_key")), replacement=replacement)

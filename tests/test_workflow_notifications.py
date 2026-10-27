@@ -66,3 +66,6 @@ def test_allowed_resolutions_say_what_happened():
         "The seller approved it. Your $21.60 refund")
     held = describe(p, "escalate", "decionis_escalate: review", req, None)
     assert "seller has been asked to approve" in held and "Decionis" not in held and "AgentSafe" not in held
+    # The code may have come by SMS or in the chat, so the reply doesn't name a channel.
+    no_code = describe(p, "deny", "evidence_required: release requires a delivery code", {"action": "release"}, None)
+    assert no_code == "I need the one-time delivery code we sent you first."
