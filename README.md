@@ -91,14 +91,23 @@ only AgentSafe may `kms:Sign`, and the tools role, which is what Gateway reaches
 
 ## For judges: how to interact
 
+**Deployed project:** [Open Clasp AWS on WhatsApp](https://wa.me/46764498763), or message
+**+46 76 449 87 63** from your own WhatsApp account. Send **"Show me the current catalog"** to begin.
+Clasp's interface is WhatsApp, backed by Amazon Bedrock AgentCore; no AWS account, console access or
+separate Clasp login is needed. The [public source repository](https://github.com/ocularminds/clasp)
+is [MIT-licensed](LICENSE).
+
 * **Offline, in two minutes:** `make deps && make test && make simulate`. Every channel message is printed,
   and the run ends with the ledger and the AgentSafe decision log, including the denied "$1,000" injection.
-* **On phones:** message the WhatsApp business number given on the Devpost page. With `AUTO_ENROL_CHANNELS=whatsapp`
-  on the ingress Lambda, any new number is enrolled as a buyer on first contact, with its own Cognito identity. With
-  `COURIER_MODE=auto`, the courier pickup is scanned as soon as the payment is held, so a judge can buy, pay, receive
-  the delivery code and open a Truce alone. SMS still requires verified sandbox destinations; where a text can't
-  be sent, the delivery code arrives in the WhatsApp chat instead. Give the assistant an email address to receive the receipt and
-  evidence pack. A request that escalates waits for the seller (the owner) or a supervisor to answer by email.
+* **On phones:** new WhatsApp numbers are enrolled automatically as buyers. Choose an in-stock item from the
+  current catalog, ask to buy it, then open the checkout link and press Pay. The checkout is simulated: no card
+  is needed and no real money moves. The simulated courier pickup happens automatically, so one judge can
+  complete an order without a second phone. The delivery code arrives by SMS or, when SMS is rejected, in
+  WhatsApp. If a text never arrives, ask Clasp to resend the delivery code in the chat. Return the code to
+  confirm the simulated delivery and release the seller's payout. To test a Truce instead, report a problem
+  **before returning the delivery code**, then follow the fresh-photo challenge in the chat. Give the assistant
+  an email address to receive the receipt and evidence pack. A request that escalates waits for the seller
+  (the owner) or a supervisor to answer by email.
 * **What is simulated:** the payment provider (mock hosted checkout + HMAC-signed webhook), the courier
   (HMAC-signed pickup scan; delivery is confirmed by the buyer's one-time code) and production-grade image forensics
   (the model only reports; AgentSafe decides).

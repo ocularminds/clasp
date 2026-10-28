@@ -1,3 +1,9 @@
+## Judge access
+
+**Deployed project:** [Open Clasp AWS on WhatsApp](https://wa.me/46764498763), or message **+46 76 449 87 63** from your own WhatsApp account and send **"Show me the current catalog"**. Clasp is a WhatsApp agent deployed on Amazon Bedrock AgentCore; no AWS account, console access or separate Clasp login is needed. New numbers are enrolled automatically. Choose an in-stock item and use the simulated checkout; no card is needed and no real money moves. Courier pickup is automatic, so one judge can complete an order without a second phone.
+
+**Source code and interaction instructions:** [github.com/ocularminds/clasp](https://github.com/ocularminds/clasp#for-judges-how-to-interact). The repository is public and MIT-licensed. The README explains delivery codes, the Truce photo challenge, email approvals and the offline simulator.
+
 ## Inspiration
 
 Messaging apps became storefronts, but the trust model never caught up. Sellers hand over goods against WhatsApp screenshots that only look like proof of payment, and merchants face refund claims backed by AI-generated photos of damage. We asked: what if the conversation itself could hold the money, check the evidence, and refuse to be talked into paying out?
